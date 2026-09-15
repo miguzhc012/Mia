@@ -106,7 +106,7 @@ class MemoryStore:
 
     def create(self, obj: MemoryObject) -> MemoryObject:
         """Cria uma nova memória."""
-        tags_val = json.dumps(obj.tags) if isinstance(obj.tags, (list, tuple)) else (obj.tags or "[]")
+        tags_val = self._json_if_needed(obj.tags)
         type_val = obj.type.value if hasattr(obj.type, 'value') else obj.type
         self._db.execute(
             """INSERT INTO memory_objects
@@ -126,12 +126,12 @@ class MemoryStore:
                 obj.confidence,
                 obj.scope,
                 obj.person_id,
-                obj.embedding,
-                obj.emotional_context,
-                obj.provenance,
+                self._json_if_needed(obj.embedding),
+                self._json_if_needed(obj.emotional_context),
+                self._json_if_needed(obj.provenance),
                 obj.decay_state,
-                obj.status,
-                obj.revision_history,
+                self._json_if_needed(obj.status),
+                self._json_if_needed(obj.revision_history),
                 obj.observed_at,
                 obj.version,
                 obj.is_consolidated,
@@ -142,6 +142,13 @@ class MemoryStore:
         )
         self._db.commit()
         return obj
+
+    @staticmethod
+    def _json_if_needed(value: Any) -> Any:
+        """Serializa dict/list para JSON; deixa tipos primitivos como estão."""
+        if isinstance(value, (dict, list, tuple)):
+            return json.dumps(value)
+        return value
 
     def get(self, obj_id: str) -> MemoryObject | None:
         """Recupera uma memória por ID."""
@@ -245,7 +252,16 @@ class MemoryStore:
 
     def _row_to_obj(self, row: dict[str, Any]) -> MemoryObject:
         """Converte row do banco para MemoryObject."""
-        tags_val = json.loads(row["tags"]) if isinstance(row["tags"], str) else (row["tags"] or [])
+        def _unjson(value: Any) -> Any:
+            """Deserializa JSON se for string JSON; senão retorna como está."""
+            if isinstance(value, str):
+                try:
+                    return json.loads(value)
+                except (json.JSONDecodeError, ValueError):
+                    return value
+            return value
+
+        tags_val = _unjson(row["tags"]) if row.get("tags") else []
         return MemoryObject(
             content=row["content"],
             type=row["type"],
@@ -257,12 +273,12 @@ class MemoryStore:
             confidence=row["confidence"],
             scope=row["scope"],
             person_id=row["person_id"],
-            embedding=row["embedding"],
-            emotional_context=row["emotional_context"],
-            provenance=row["provenance"],
+            embedding=_unjson(row["embedding"]),
+            emotional_context=_unjson(row["emotional_context"]),
+            provenance=_unjson(row["provenance"]),
             decay_state=row["decay_state"],
-            status=row["status"],
-            revision_history=row["revision_history"],
+            status=_unjson(row["status"]),
+            revision_history=_unjson(row["revision_history"]),
             observed_at=row["observed_at"],
             version=row["version"],
             is_consolidated=row["is_consolidated"],

@@ -45,8 +45,24 @@ class SQLiteConnection:
         """Cria todas as tabelas do schema v1 conforme especificação F.2."""
         c = self.connection
         c.executescript(_SCHEMA_SQL)
+        # Migrações incrementais (idempotentes)
+        self._migrate_relationships()
         c.execute("PRAGMA user_version = 1")
         c.commit()
+
+    def _migrate_relationships(self) -> None:
+        """Adiciona colunas novas de relationships em DBs antigos."""
+        c = self.connection
+        try:
+            cols = {row["name"] for row in c.execute("PRAGMA table_info(relationships)")}
+        except Exception:
+            return
+        if "created_at" not in cols:
+            c.execute("ALTER TABLE relationships ADD COLUMN created_at TEXT")
+        if "updated_at" not in cols:
+            c.execute("ALTER TABLE relationships ADD COLUMN updated_at TEXT")
+        if "history" not in cols:
+            c.execute("ALTER TABLE relationships ADD COLUMN history TEXT DEFAULT '[]'")
 
     def get_schema_version(self) -> int:
         cur = self.connection.execute("PRAGMA user_version")
@@ -223,7 +239,10 @@ CREATE TABLE IF NOT EXISTS relationships (
     familiarity REAL NOT NULL DEFAULT 0.0 CHECK(familiarity BETWEEN 0.0 AND 1.0),
     interaction_count INTEGER NOT NULL DEFAULT 0,
     last_interaction TEXT,
-    version INTEGER NOT NULL DEFAULT 1
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT,
+    updated_at TEXT,
+    history TEXT DEFAULT '[]'
 );
 
 -- relationship_events
