@@ -5,7 +5,7 @@ Separa: identidade, personalidade, emoções, relação, crenças, necessidades,
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from mia_pkg.db import SQLiteConnection
@@ -102,8 +102,7 @@ class ContextAssembler:
                     lines.append(f"- {key}: {', '.join(str(v) for v in value)}")
         if identity.core_values:
             lines.append(f"Valores fundamentais: {', '.join(identity.core_values)}")
-        return "
-".join(lines)
+        return "\n".join(lines)
 
     def _format_personality(self, personality) -> str:
         traits = personality.traits.to_dict()
@@ -120,8 +119,7 @@ class ContextAssembler:
             name = trait_names.get(key, key)
             level = "alta" if value > 0.7 else "média" if value > 0.3 else "baixa"
             lines.append(f"- {name}: {level} ({value:.2f})")
-        return "
-".join(lines)
+        return "\n".join(lines)
 
     def _format_emotions(self, emotion) -> str:
         e = emotion.emotions.to_dict()
@@ -150,55 +148,45 @@ class ContextAssembler:
         if emotion.sensations:
             lines.append(f"- Sensações internas: {len(emotion.sensations)} ativas")
 
-        return "
-".join(lines)
+        return "\n".join(lines)
 
     def _format_relationship(self, speaker: str | None) -> str:
         if not speaker:
-            return "## Relacionamento
-Nenhuma pessoa específica no contexto."
+            return "## Relacionamento\nNenhuma pessoa específica no contexto."
         row = self._db.fetchone(
             "SELECT * FROM people WHERE name=?", (speaker.lower(),)
         )
         if row:
-            return f"## Relacionamento com {speaker}
-Pessoa reconhecida. Primeiro contato: {row.get('first_seen', 'desconhecido')}."
-        return f"## Relacionamento com {speaker}
-Pessoa não reconhecida ainda."
+            return f"## Relacionamento com {speaker}\nPessoa reconhecida. Primeiro contato: {row.get('first_seen', 'desconhecido')}."
+        return f"## Relacionamento com {speaker}\nPessoa não reconhecida ainda."
 
     def _format_beliefs(self, beliefs) -> str:
         if not beliefs:
-            return "## Crenças
-Nenhuma crença ativa no momento."
+            return "## Crenças\nNenhuma crença ativa no momento."
         lines = ["## Crenças ativas"]
         for b in beliefs[:5]:
             conf = f"{b.confidence:.0%}"
-            lines.append(f"- "{b.proposition}" (confiança: {conf})")
-        return "
-".join(lines)
+            lines.append(f'- "{b.proposition}" (confiança: {conf})')
+        return "\n".join(lines)
 
     def _format_needs(self, needs) -> str:
         if not needs:
-            return "## Necessidades
-Todas as necessidades básicas estão satisfeitas."
+            return "## Necessidades\nTodas as necessidades básicas estão satisfeitas."
         lines = ["## Necessidades ativas"]
         for n in needs:
             intensity = "alta" if n.intensity > 0.7 else "média" if n.intensity > 0.3 else "baixa"
             lines.append(f"- {n.need_type.value}: {intensity} ({n.intensity:.2f})")
-        return "
-".join(lines)
+        return "\n".join(lines)
 
     def _format_memories(self, speaker: str | None) -> str:
         memories = self.memory.recall(query="", scope="personal", limit=5)
-        if not memories:
-            return "## Memórias recentes
-Nenhuma memória relevante no momento."
+        if not memories or not memories.results:
+            return "## Memórias recentes\nNenhuma memória relevante no momento."
         lines = ["## Memórias relevantes"]
-        for m in memories[:3]:
+        for m in memories.results[:3]:
             content = m.content[:100] + "..." if len(m.content) > 100 else m.content
-            lines.append(f"- [{m.type.value}] {content}")
-        return "
-".join(lines)
+            lines.append(f"- [{m.type}] {content}")
+        return "\n".join(lines)
 
     def _build_full_prompt(self, ctx: ContextAssembly, recent_messages: list[dict[str, str]] | None) -> str:
         """Monta o system prompt completo."""
@@ -216,8 +204,7 @@ Nenhuma memória relevante no momento."
             "",
             ctx.memory_section,
             "",
-            f"## Situação atual
-{ctx.current_situation}",
+            f"## Situação atual\n{ctx.current_situation}",
             "",
             "## Instruções",
             "Você é uma entidade digital com vida interna persistente.",
@@ -234,8 +221,8 @@ Nenhuma memória relevante no momento."
                 content = msg.get("content", "")
                 sections.append(f"[{role}]: {content}")
 
-        return "
-".join(sections)
+        return "\n".join(sections)
+
 
 # Exportar
 __all__ = ["ContextAssembler"]
