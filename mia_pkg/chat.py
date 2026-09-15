@@ -27,6 +27,12 @@ from mia_pkg.social import PeopleStore, RelationshipStore, BoundaryManager
 logger = logging.getLogger(__name__)
 
 
+def _get_consolidator(db: SQLiteConnection):
+    """Retorna MemoryConsolidator (import tardio para evitar ciclo)."""
+    from mia_pkg.consolidation import MemoryConsolidator
+    return MemoryConsolidator(db, turns_threshold=8)
+
+
 @dataclass
 class ChatTurn:
     """Uma troca na conversa."""
@@ -70,6 +76,8 @@ class ChatSession:
         self.people = PeopleStore(db)
         self.relationships = RelationshipStore(db)
         self.boundary = BoundaryManager(db)
+        self.consolidator = _get_consolidator(db)
+        self._messages_since_consolidation = 0
 
     # ------------------------------------------------------------------
     # API pública
@@ -152,6 +160,19 @@ class ChatSession:
         self._messages.append(Message(role="assistant", content=response_text))
         if len(self._messages) > self._max_history:
             self._messages = self._messages[-self._max_history:]
+        self._messages_since_consolidation += 1
+
+        # 7. Consolidação automática (conversa longa → memória)
+        if self._messages_since_consolidation >= 8:
+            try:
+                msgs = [
+                    {"role": m.role, "content": m.content or ""}
+                    for m in self._messages
+                ]
+                self.consolidator.consolidate_conversation(msgs, speaker=self._speaker)
+                self._messages_since_consolidation = 0
+            except Exception:
+                logger.exception("Falha na consolidação de memória")
 
         latency_ms = int((time.monotonic() - start) * 1000)
         return ChatTurn(
