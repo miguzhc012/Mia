@@ -343,6 +343,16 @@ CREATE TABLE IF NOT EXISTS goals (
     progress REAL NOT NULL DEFAULT 0.0 CHECK(progress BETWEEN 0.0 AND 1.0)
 );
 
+-- sandbox_actions (Fase 8)
+CREATE TABLE IF NOT EXISTS sandbox_actions (
+    id TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    allowed INTEGER NOT NULL DEFAULT 0,
+    reason TEXT,
+    timestamp TEXT NOT NULL
+);
+
 -- sessions (existente, mantida)
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
