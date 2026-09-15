@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS state_transitions_audit (
     confidence REAL CHECK(confidence BETWEEN 0.0 AND 1.0),
     applied_by TEXT NOT NULL,
     proposal_id TEXT NOT NULL,
+    hash TEXT,
     hash_prev TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON state_transitions_audit(timestamp DESC);

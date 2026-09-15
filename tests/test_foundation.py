@@ -222,6 +222,50 @@ class TestStateAuthority(unittest.TestCase):
         self.assertEqual(rows[0]["hash_prev"], "0" * 64)  # primeiro
         self.assertNotEqual(rows[1]["hash_prev"], "0" * 64)  # aponta pro anterior
 
+    def test_sql_injection_key_blocked(self) -> None:
+        """Regression: key maliciosa (SQL injection) é bloqueada pela whitelist."""
+        proposal = _make_proposal(
+            key="happiness; DROP TABLE emotion_state; --",
+            delta=0.5,
+            source="cognitive_core",
+        )
+        result = self.sa.propose(proposal)
+        self.assertFalse(result.applied)
+        self.assertFalse(result.validation.valid)
+        self.assertIn("não é permitida", result.validation.errors[0])
+
+        # A tabela continua existindo
+        rows = self.db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='emotion_state'")
+        self.assertEqual(len(rows), 1)
+
+    def test_verify_chain_integrity(self) -> None:
+        """Regression: verify_chain valida a integridade da hash chain."""
+        for i in range(2):
+            proposal = _make_proposal(
+                key="happiness", delta=0.5 + i * 0.1, source="cognitive_core"
+            )
+            self.sa.propose(proposal)
+
+        ok, count, errors = self.sa.verify_chain()
+        self.assertTrue(ok)
+        self.assertEqual(count, 2)
+        self.assertEqual(errors, [])
+
+    def test_verify_chain_detects_tampering(self) -> None:
+        """Regression: adulteração no audit log é detectada."""
+        proposal = _make_proposal(key="happiness", delta=0.5, source="cognitive_core")
+        self.sa.propose(proposal)
+
+        # Adultera o after_snapshot de um registro
+        self.db.execute(
+            "UPDATE state_transitions_audit SET after_snapshot = '{\"fake\": true}'"
+        )
+        self.db.commit()
+
+        ok, count, errors = self.sa.verify_chain()
+        self.assertFalse(ok)
+        self.assertGreaterEqual(len(errors), 1)
+
 
 # ======================================================================
 # MemoryStore

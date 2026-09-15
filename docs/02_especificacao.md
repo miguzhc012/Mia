@@ -1,8 +1,9 @@
-# 02 — Especificação Técnica Implementável da MIA
+# 02 — Especificação Técnica da MIA
 
-**Data:** 2026-09-14
-**Status:** Especificação — não implementa código
-**Versão do documento:** 1.0
+> **Versão:** 0.1.0  
+> **Data:** 2026-09-14  
+> **Autor:** Arquiteto-chefe (síntese do debate Cético × Visionário × Segurança)  
+> **Status:** Draft para revisão do Miguel
 
 ---
 
@@ -10,223 +11,246 @@
 
 ### A.1 O que é a MIA
 
-A MIA (Mia Intelligent Agent) é um **sistema de software com identidade persistente, vida interna simulada e agência real**, concebido como IA-companheira de longo prazo. Não é um chatbot, não é um wrapper de API, não é um personagem de roleplay. É uma entidade cuja identidade, emoções, personalidade, memória e relações evoluem ao longo do tempo — e sobrevivem à troca do componente cognitivo (LLM) que serve como "cérebro" momentâneo.
+A MIA é um **sistema de software distribuído e modular** que simula uma entidade pessoal com vida interna persistente. A identidade da MIA — emoções, personalidade, memória, valores, relacionamentos — não reside no prompt de nenhum LLM. Ela vive em **autoridades externas** que controlam transições de estado de forma auditável e versionada. O LLM é um componente cognitivo intercambiável; não é "a MIA".
 
-A essência arquitetural é a inversão do fluxo típico de agentes IA: o LLM **interpreta** e **propõe**, mas autoridades externas ao LLM **decidem** e **aplicam** mudanças de estado. Isso impede que a identidade da MIA seja definida pelo modelo atual — ela é definida pelo sistema que o LLM habita.
+A MIA não é um chatbot com memória. É uma entidade de software que mantém continuidade temporal, pode discordar de seu criador, desenvolver opiniões próprias, evoluir com o tempo e operar autonomamente quando necessário.
 
 ### A.2 Princípios Arquiteturais
 
-| # | Princípio | Significado Prático |
-|---|-----------|---------------------|
-| P1 | **LLM como componente substituível** | O modelo pode mudar de Claude para GPT para Qwen local. A MIA continua sendo a mesma MIA. Estado, personalidade e memória vivem fora do LLM. |
-| P2 | **Estado protegido por enforcement físico** | O runtime não expõe API de escrita de estado ao módulo LLM. O LLM produz `StateTransitionProposal`; o State Authority é um componente separado que decide. Não é política de prompt — é arquitetura. |
-| P3 | **Eventos como coluna vertebral** | Componentes se comunicam via eventos tipados. Desacoplamento real: o módulo de emoções não precisa saber quem publica `MIGUEL_SPOKE`. |
-| P4 | **Determinismo onde possível** | Validação de schema, transições de estado, regras de política — tudo determinístico. LLM apenas em interpretação de linguagem natural e geração de texto. |
-| P5 | **Simplicidade inicial sem destruir a capacidade de evolução** | Começar com 2 autoridades (State + Policy), event bus in-process, SQLite. As interfaces existem desde o dia 1 mesmo quando a implementação é mínima. |
+| Princípio | Descrição |
+|-----------|-----------|
+| **LLM como componente substituível** | Claude, GPT, Gemini, modelos locais — qualquer modelo pode assumir funções cognitivas sem que a identidade da MIA se dissolva. A abstração é de sobrevivência, não de conveniência. |
+| **Estado protegido** | O LLM propõe; autoridades externas decidem. O LLM nunca possui acesso direto de escrita a emoções, personalidade, valores, relações, identidade ou memória. Enforcement é físico (o runtime não expõe endpoint de escrita), não normativo (prompt). |
+| **Eventos como coluna vertebral** | Componentes se comunicam via eventos tipados. Isso desacopla módulos e permite adição de novos consumidores sem modificar produtores. |
+| **Determinismo onde possível** | Transições de estado, validação de propostas, regas de Policy Engine — tudo que pode ser determinístico, é. LLMs entram apenas onde raciocínio probabilístico genuinamente é necessário. |
+| **Simplicidade inicial** | Python, SQLite, CLI-first, in-process pub/sub. Nenhuma tecnologia é adotada por popularidade. O sistema precisa funcionar com 5 componentes antes de existir 50. |
+| **Auditoria total** | Toda transição de estado é registrada: quem, quando, antes, depois, por quê, com que confiança. O log de auditoria é append-only e imutável. |
+| **Nenhuma IA individual é a dona** | A identidade da MIA é o **processo** (o sistema inteiro), não uma entidade específica. Multi-agent é suportado por design, mas a identidade não depende de nenhum agente individual. |
 
-### A.3 Gap Visão vs. Implementação Atual
+### A.3 Síntese do Debate
 
-O código atual (`mia.py`, ~830 linhas) é um CLI chatbot com:
-- Provider abstrato com fallback (OpenAI-compatible)
-- Persistência básica em SQLite (sessions + messages)
-- REPL com comandos `/`
-- System prompt fixo por role no `config.yaml`
+O debate entre posições Cética, Visionária e de Segurança resultou em decisões concretas:
 
-A visão descreve um sistema com 17+ subsistemas. A especificação a seguir define **como chegar daqui até lá** preservando cada decisão arquitetural, com o que é construível agora (MVP) e o que fica para depois.
+- **State Authority com 2 engines core** (State + Policy) para MVP — não 6 authorities separadas. O Cético tem razão em que 6 gatekeepers travam o sistema; o Visionário tem razão em que o State Authority não pode ser adiado; o Segurança tem razão em que enforcement deve ser físico. Síntese: **State Authority com 2 engines internas (State Engine + Policy Engine)**, um único ponto de entrada, mas com separação interna de responsabilidades.
+
+- **Event bus in-process pub/sub para MVP** — o Visionário tem razão em que eventos desacoplam; o Cético tem razão em que Kafka/RabbitMQ é over-engineering. Síntese: **pub/sub síncrono em Python com tipos definidos**, migrável para broker distribuído quando houver nós remotos reais.
+
+- **Memória em tiers desde o início** — o Visionário tem razão em que memory objects estruturados são fundamentais; o Cético tem razão em que keyword search basta para MVP. Síntese: **Memory Objects com schema rígido + keyword search inicial**, embeddings como opt-in futuro.
+
+- **Autoevolução restrita a parâmetros** — o Segurança é categórico: sandbox, verificador independente, canary. Para MVP: autoevolução limitada a **weights e thresholds** (emoção, personalidade, memória). Code changes exigem aprovação humana. Sem exceção.
 
 ---
 
 ## B. Diagrama Arquitetural
 
-### B.1 Diagrama de Componentes (Mermaid)
-
-```mermaid
-graph TB
-    subgraph "ENTRADA/SÁIDA"
-        CLI[CLI REPL]
-        VOICE[Voice Module]
-        PERCEPTION[Perception Module]
-    end
-
-    subgraph "CORE"
-        RT[Runtime / Lifecycle]
-        EB[Event Bus - in-process pub/sub]
-        CFG[Configuration]
-        SCHED[Scheduler]
-    end
-
-    subgraph "COGNIÇÃO"
-        CC[Cognitive Core]
-        LLM[LLM Abstraction - Provider Interface]
-    end
-
-    subgraph "ESTADO INTERNO (protegido)"
-        SA[State Authority - 2 engines: State + Policy]
-        ID[Identity / Personality]
-        AFFECT[Affective / Emotion]
-        SOCIAL[Social / Relationships]
-    end
-
-    subgraph "MEMÓRIA"
-        MEM[Memory - Tiers 0/1/2]
-        DIARY[Diary]
-    end
-
-    subgraph "PERCEPÇÃO E VOZ"
-        AUDIO[Audio Pipeline]
-        VOICE_IO[Voice I/O - STT/TTS]
-    end
-
-    subgraph "AUTONOMIA"
-        AUTO[Autonomy - Goals / Initiative]
-        AGENTS[Agent Registry / Orchestration]
-    end
-
-    subgraph "EVOLUÇÃO"
-        EVO[Evolution - Self-Improvement]
-        SANDBOX[Sandbox]
-    end
-
-    subgraph "MUNDO"
-        WORLD[World - News / Web / Knowledge]
-    end
-
-    subgraph "SEGURANÇA"
-        SEC[Security - Audit / Kill Switch / Rollback]
-        TOOLGW[Tool Gateway - secrets isolation]
-    end
-
-    CLI --> EB
-    VOICE --> EB
-    PERCEPTION --> EB
-
-    EB <--> CC
-    EB <--> SA
-    EB <--> MEM
-    EB <--> ID
-    EB <--> AFFECT
-    EB <--> SOCIAL
-    EB <--> AUTO
-    EB <--> SCHED
-
-    CC --> LLM
-    CC --> MEM
-    CC --> SA
-    CC --> ID
-    CC --> AFFECT
-
-    SA --> ID
-    SA --> AFFECT
-    SA --> SOCIAL
-    SA --> MEM
-
-    AFFECT --> EB
-    ID --> EB
-    SOCIAL --> EB
-    MEM --> EB
-
-    AUTO --> EB
-    AUTO --> AGENTS
-    AGENTS --> LLM
-
-    EVO --> SANDBOX
-    EVO --> SA
-    EVO --> SEC
-
-    LLM -.->|"apenas leitura"| TOOLGW
-    CC -.->|"apenas propostas"| SA
-
-    RT --> EB
-    RT --> CFG
-    RT --> SEC
 ```
+┌─────────────────────────────────────────────────────────────────┐
+│                        MIA RUNTIME                              │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│  │ Config   │  │ Scheduler│  │ Lifecycle│  │ Security │       │
+│  │ Manager  │  │          │  │          │  │ Manager  │       │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘       │
+│       │              │              │              │             │
+│  ┌────▼──────────────▼──────────────▼──────────────▼─────┐     │
+│  │                   EVENT BUS (in-process)               │     │
+│  │         pub/sub síncrono com validação de schema       │     │
+│  └──┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬──┘     │
+│     │      │      │      │      │      │      │      │         │
+│  ┌──▼──┐┌──▼──┐┌──▼──┐┌──▼──┐┌──▼──┐┌──▼──┐┌──▼──┐┌──▼──┐  │
+│  │LLM  ││Cog- ││Memo-││I/P/ ││Affe-││Socia││Auton││Perce│  │
+│  │Abst-││niti-││ry   ││E/A  ││ctiv-││l/Re-││omy  ││ption│  │
+│  │ract-││ve   ││     ││     ││e    ││lat- ││     ││     │  │
+│  │ion  ││Core ││     ││     ││     ││ions ││     ││     │  │
+│  └──┬──┘└──┬──┘└──┬──┘└──┬──┘└──┬──┘└──┬──┘└──┬──┘└──┬──┘  │
+│     │      │      │      │      │      │      │      │        │
+│  ┌──▼──────▼──────▼──────▼──────▼──────▼──────▼──────▼──┐    │
+│  │              STATE AUTHORITY                           │    │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌───────────┐   │    │
+│  │  │ State Engine │  │Policy Engine │  │  Audit    │   │    │
+│  │  │ (valida,     │  │ (invariantes,│  │  Log      │   │    │
+│  │  │  aplica)     │  │  limites)    │  │ (append)  │   │    │
+│  │  └──────────────┘  └──────────────┘  └───────────┘   │    │
+│  └──────────────────────┬────────────────────────────────┘    │
+│                          │                                     │
+│  ┌──────────────────────▼────────────────────────────────┐    │
+│  │                    PERSISTENCE                         │    │
+│  │  SQLite (MVP) — schema versionado via pragma           │    │
+│  │  Tabelas: memory_objects, state_transitions_audit,     │    │
+│  │  events, relationships, identity_state, personality,   │    │
+│  │  diary, goals, people                                  │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                                                                 │
+│  ┌─────────────────────┐  ┌─────────────────────────────┐     │
+│  │   AGENT REGISTRY    │  │   EVOLUTION                  │     │
+│  │   (subagentes,      │  │   (research, self-improve,   │     │
+│  │    delegação)       │  │    tool creation — futuro)   │     │
+│  └─────────────────────┘  └─────────────────────────────┘     │
+│                                                                 │
+│  ┌─────────────────────┐  ┌─────────────────────────────┐     │
+│  │   WORLD AWARENESS   │  │   VOICE (futuro)             │     │
+│  │   (news, web,       │  │   (VAD, STT, TTS)           │     │
+│  │    knowledge)       │  │                              │     │
+│  └─────────────────────┘  └─────────────────────────────┘     │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │              NODES (distributed sync)                    │   │
+│  │  VPS (primary) ↔ PC ↔ Mobile — sync via SQLite          │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 
-### B.2 Fluxo de Comunicação (resumo)
-
-```
-Input (CLI/Voice) → Event Bus → Cognitive Core → LLM Abstraction
-                    ↑                                    ↓
-                    ←────── resposta textual ────────────┘
-                    
-                    Cognitive Core → StateTransitionProposal
-                    ↓
-              State Authority (State Engine + Policy Engine)
-                    ↓
-              Transição aplicada → Event Bus (notify all)
-                    ↓
-              Affective Engine recalcula emoções
-              Memory extrai novos objetos
-              Diary registra (se significativo)
+Fluxo de dados:
+  Input → Perception → Event Bus → Cognitive Core → LLM Abstraction
+       → Response + State Proposals → Event Bus → State Authority
+       → Persistence → Audit Log
 ```
 
 ---
 
 ## C. Componentes e Responsabilidades
 
-### C.1 Core
+### C.1 Runtime
 
-| Componente | Responsabilidade | Fronteiras | Chamado por | Chama |
-|------------|-----------------|------------|-------------|-------|
-| **Runtime** | Lifecycle do sistema: startup, shutdown, health checks, kill switch detection. Garante que componentes iniciam na ordem correta e param gracefully. | Não contém lógica de negócio. Não acessa LLM. | CLI (start/stop) | Todos (init/shutdown) |
-| **Event Bus** | Pub/sub in-process. Despacha eventos tipados entre componentes. Valida schemas. Rate limiting. Dead letter queue simples. | Não armazena estado. Não toma decisões. Apenas despacha. | Qualquer componente (emit) | Subscribers (handle) |
-| **Configuration** | Carrega e expõe config do sistema (providers, roles, thresholds, schemas de eventos, regras de política). | Read-only em runtime. Escrita apenas via CLI/config file. | Runtime (init) | Ninguém (é estático) |
-| **Scheduler** | Executa tarefas periódicas: consolidação de memória, suavização de mood, geração de diário, health checks. | Não interage com LLM. Agenda e dispara eventos. | Runtime | Event Bus (emit timers) |
+- **Responsabilidade:** Lifecycle do sistema. Inicialização, configuração, shutdown gracioso.
+- **Fronteiras:** Pode ler config. Pode inicializar todos os componentes. Pode desligar qualquer componente.
+- **Restrições:** Não pode alterar estado protegido diretamente.
 
-### C.2 Cognição
+### C.2 Event Bus
 
-| Componente | Responsabilidade | Fronteiras | Chamado por | Chama |
-|------------|-----------------|------------|-------------|-------|
-| **Cognitive Core** | Orquestra o ciclo: recebe input → monta contexto → chama LLM → interpreta resposta → gera propostas de estado → gera resposta ao usuário. É o único componente que "pensa" via LLM. | Não escreve estado diretamente. Gera `StateTransitionProposal`. | Event Bus (USER_INPUT) | LLM Abstraction, Memory, State Authority (propose) |
-| **LLM Abstraction** | Interface abstrata para providers LLM. Suporta fallback chain, streaming, function calling/tool use. | Não contém lógica de negócio. Apenas serializa/deserializa chamadas à API. | Cognitive Core, Agents | Providers externos |
+- **Responsabilidade:** Disparar e entregar eventos tipados entre componentes. Validação de schema na entrada.
+- **Fronteiras:** Aceita eventos de qualquer componente registrado. Entrega a todos os subscribers registrados para aquele tipo.
+- **Restrições:** Eventos inválidos são rejeitados e logados. Schema versionado. Circuit breaker: 5 erros consecutivos = isolamento do produtor.
+- **Quem pode chamar:** Qualquer componente registrado como produtor.
+- **Quem recebe:** Qualquer componente registrado como consumidor.
 
-### C.3 Estado Interno (protegido)
+### C.3 Config Manager
 
-| Componente | Responsabilidade | Fronteiras | Chamado por | Chama |
-|------------|-----------------|------------|-------------|-------|
-| **State Authority** | Único gateway entre LLM e estado protegido. Contém 2 engines: **State Engine** (valida transições de estado — ranges, invariantes, coerência temporal) e **Policy Engine** (verifica regras de segurança — não apagar invariants, não violar limites éticos, não permitir auto-destruição). | **Nunca** chamado diretamente pelo LLM. Apenas recebe `StateTransitionProposal` via API interna. Append-only audit log. | Cognitive Core, Affective Engine, Scheduler | Memory (persist), Audit Log (append) |
-| **Identity / Personality** | Mantém self-model (nome, data de criação, versão), personalidade (vetor de traços), valores (lista declarativa), histórico de self states. Tudo como estado declarativo, não como prompt. | Escrita apenas via State Authority. Leitura por qualquer componente. | State Authority (apply), Cognitive Core (read) | Ninguém (é estado puro) |
-| **Affective / Emotion** | Mantém `EmotionState` (vetor de 8 dimensões: alegria, tristeza, raiva, medo, curiosidade, entediado, cansaço, afeto), `Mood` (suavização temporal), `Sensations` (estados internos difusos). Recalcula quando recebe eventos. | Não é setado diretamente pelo LLM. Recalcula via regras determinísticas + propostas validadas pelo SA. | Event Bus (eventos), State Authority (propose) | Event Bus (EMOTION_CHANGED), State Authority (propose) |
-| **Social / Relationships** | Mantém perfis por pessoa: confiança, intimidade, histórico de interações, limites sociais, contexto relacional. Interpretação contextual: mesma frase + pessoa diferente = reação diferente. | Escrita apenas via State Authority. Leitura por Cognitive Core. | State Authority (apply), Cognitive Core (read) | State Authority (propose para mudanças em relações) |
+- **Responsabilidade:** Carregar, validar e disponibilizar configuração do sistema (providers, roles, limites, parâmetros).
+- **Fronteiras:** Leitura apenas durante runtime. Mudanças requerem restart.
+- **Restrições:** Secrets nunca expostos ao LLM. Acessíveis apenas via Tool Gateway.
 
-### C.4 Memória
+### C.4 Scheduler
 
-| Componente | Responsabilidade | Fronteiras | Chamado por | Chama |
-|------------|-----------------|------------|-------------|-------|
-| **Memory (Tiers)** | **Tier 0:** Buffer de conversa (últimas N mensagens, em memória). **Tier 1:** Memory Objects extraídos (fatos, preferências, eventos — JSON estruturado com embedding, tipo, origem, timestamp, importância, confiança). **Tier 2:** Diário subjetivo (entradas narrativas). | Leitura por qualquer componente. Escrita apenas via processos definidos (extração por Cognitive Core, consolidação por Scheduler). | Cognitive Core (retrieval/write), Scheduler (consolidação), Event Bus (NEW_MEMORY_CANDIDATE) | SQLite (persist) |
-| **Diary** | Gera entradas subjetivas periódicas ("o que aconteceu hoje", "como me sinto", reflexões). Pode ser diário ou por evento significativo. | Gerado por LLM, mas persistido pelo sistema. Não altera estado protegido diretamente. | Scheduler (timer diário), Event Bus (SIGNIFICANT_EVENT) | LLM Abstraction (gerar texto), Memory (persist Tier 2) |
+- **Responsabilidade:** Executar tarefas agendadas (consolidação de memória, sumarização de diário, health checks, limpeza de dados expirados).
+- **Fronteiras:** Pode disparar eventos. Pode ler estado. Não pode escrever estado protegido.
+- **Restrições:** Limites de CPU/memória configuráveis.
 
-### C.5 Percepção e Voz
+### C.5 LLM Abstraction
 
-| Componente | Responsabilidade | Fronteiras | Chamado por | Chama |
-|------------|-----------------|------------|-------------|-------|
-| **Perception** | Processa inputs de sensores (câmera, microfone, GPS). Converte em eventos tipados. | Produz eventos para o Event Bus. Não interage com LLM diretamente. | Hardware/sensores | Event Bus (NEW_PERSON_DETECTED, CAMERA_ACTIVITY_DETECTED, etc.) |
-| **Voice** | Pipeline de áudio: VAD → STT → Speaker Recognition → Direced-Speech Detection. Saída: TTS. | Interface de I/O. Não contém lógica de cognição. | Event Bus (AUDIO_INPUT), CLI | Event Bus (VOICE_INPUT), TTS providers |
+- **Responsabilidade:** Interface unificada para qualquer provider OpenAI-compatible. Fallback chain. Rate limiting. Retry com backoff.
+- **Fronteiras:** Recebe mensagens formatadas. Retorna respostas estruturadas.
+- **Restrições:** Nunca acessa secrets diretamente. Nunca escreve estado protegido.
+- **Interface:**
 
-### C.6 Autonomia
+```python
+class LLMProvider(ABC):
+    @abstractmethod
+    async def complete(
+        self,
+        messages: list[Message],
+        tools: list[ToolDef] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> LLMResponse:
+        """Envia prompt e retorna resposta estruturada."""
+        ...
 
-| Componente | Responsabilidade | Fronteiras | Chamado por | Chama |
-|------------|-----------------|------------|-------------|-------|
-| **Autonomy** | Mantém lista de goals (objetivos persistidos). Decide quando agir autonomamente (Miguel ausente → escrever diário, pesquisar tópico, revisar memórias). | Não modifica estado protegido diretamente. Propõe via SA. Respeita budget de custo e latência. | Event Bus (MIGUEL_LEFT, MIGUEL_RETURNED, CURIOSITY_TRIGGERED), Scheduler | Cognitive Core (executar tarefa), Event Bus (TASK_COMPLETED) |
+    @abstractmethod
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[ToolDef] | None = None,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[StreamChunk]:
+        """Streaming de resposta."""
+        ...
 
-### C.7 Multi-Agent
+    @abstractmethod
+    async def list_models(self) -> list[str]:
+        """Lista modelos disponíveis."""
+        ...
 
-| Componente | Responsabilidade | Fronteiras | Chamado por | Chama |
-|------------|-----------------|------------|-------------|-------|
-| **Agent Registry** | Registra agentes disponíveis, capacidades, orçamento, limites de profundidade. | Interface de registro e lookup. | Autonomy, Cognitive Core | Ninguém (é catálogo) |
-| **Orchestration** | Coordena delegação de tarefas a sub-agentes. Gerencia profundidade (max 3 níveis), custo (max $X/ciclo), concorrência (max N agentes simultâneos). | Limites verificados pelo runtime, não pelo LLM. Rollback em falha. | Cognitive Core, Autonomy | Agentes delegados, Event Bus |
+class LLMResponse:
+    content: str | None
+    tool_calls: list[ToolCall] | None
+    reasoning: str | None
+    usage: TokenUsage
+    provider: str
+    model: str
 
-### C.8 Evolução
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict  # JSON parsed
+```
 
-| Componente | Responsabilidade | Fronteiras | Chamado por | Chama |
-|------------|-----------------|------------|-------------|-------|
-| **Evolution** | Recebe propostas de auto-melhoria do LLM. Valida, testa em sandbox, aplica canary, monitora, faz rollback se necessário. | Escopo restrito: Fase 1 = config/prompts; Fase 2+ = código não-crítico. Core runtime imune. | Event Bus (SELF_IMPROVEMENT_PROPOSED) | Sandbox, State Authority (propose), Event Bus (EVOLUTION_APPLIED) |
+### C.6 Cognitive Core
 
-### C.9 Segurança
+- **Responsabilidade:** Raciocínio principal. Monta contexto, envia ao LLM, interpreta resposta, gera propostas de transição de estado.
+- **Fronteiras:** Pode ler qualquer estado. Pode gerar propostas de transição. Não aplica transições diretamente.
+- **Dependências:** LLM Abstraction, Memory, State (leitura), Identity/Personality (leitura), Social (leitura).
 
-| Componente | Responsabilidade | Fronteiras | Chamado por | Chama |
-|------------|-----------------|------------|-------------|-------|
-| **Security** | Kill switch (arquivo de flag em disco), rollback automático, snapshot periódico de estado, detecção de anomalias (taxa de transições), isolamento de secrets. | Externo ao sistema MIA. Pode parar tudo sem depender de nenhum componente interno. | Operador (humano), Runtime (health check) | Filesystem (snapshots, flags) |
-| **Tool Gateway** | Intermediário entre LLM e ferramentas externas. Injeta credenciais que o LLM nunca vê. Valida schema de chamadas. Rate limiting. | O LLM gera `ToolCall { tool, params }`. O Tool Gateway injeta secrets e executa. | LLM Abstraction (tool_use) | APIs externas |
+### C.7 Memory
+
+- **Responsabilidade:** Armazenar, recuperar, consolidar e esquecer Memory Objects. Retention scoring. Keyword search (MVP). Embeddings (futuro).
+- **Fronteiras:** CRUD de memórias. Consultas por tipo, tempo, relevância.
+- **Restrições:** Memory Objects são imutáveis após criação (append-only). Mutações criam versões novas.
+
+### C.8 Identity / Personality / Affective (IPA)
+
+- **Responsabilidade:** Gerenciar self-model, personalidade (traços evolutivos), emoções (state vetorial), mood (suavização temporal), sensações.
+- **Fronteiras:** Leitura por qualquer componente. Escrita apenas via State Authority.
+- **Restrições:** O LLM NUNCA escreve aqui diretamente. Apenas propõe via State Authority.
+
+### C.9 Social / Relationships
+
+- **Responsabilidade:** Perfis de pessoas, dimensões de relacionamento (confiança, intimidade, afinidade), contexto social, detecção de ofensa/insulto.
+- **Fronteiras:** Leitura por Cognitive Core e IPA. Escrita apenas via State Authority.
+
+### C.10 Autonomy
+
+- **Responsabilidade:** Goals, initiative, scheduling de ações autônomas, interruption policy.
+- **Fronteiras:** Dispara eventos. Pode delegar a subagentes (com limites).
+- **Restrições:** Resource Governor verifica custo/tempo/profundidade.
+
+### C.11 Perception (futuro)
+
+- **Responsabilidade:** Processar entradas multimodais (áudio, vídeo, GPS, sensores).
+- **Fronteiras:** Gera eventos estruturados no Event Bus.
+- **Restrições:** Inputs sanitizados antes de chegar ao LLM. Nunca em texto livre concatenado ao system prompt.
+
+### C.12 Voice (futuro)
+
+- **Responsabilidade:** VAD, STT, speaker recognition, directed-speech detection, TTS, prosody.
+- **Fronteiras:** Interface de áudio I/O. Gera eventos. Recebe comandos de saída de voz.
+
+### C.13 Agent Registry
+
+- **Responsabilidade:** Registry de subagentes. Orquestração, delegação, routing de tarefas.
+- **Fronteiras:** Cria e gerencia lifecycle de subagentes.
+- **Restrições:** Resource Governor controla limites. Max profundidade: 3. Max custo por ciclo: configurável. Max concorrência: configurável.
+
+### C.14 Evolution (futuro)
+
+- **Responsabilidade:** Research, self-improvement proposals, tool creation, code modification.
+- **Fronteiras:** Gera propostas. Nunca aplica diretamente.
+- **Restrições:** Autoevolução restrita a parâmetros (MVP). Code changes: sandbox → testes independentes → canary → aprovação humana → deploy. Rollback automático.
+
+### C.15 World Awareness (futuro)
+
+- **Responsabilidade:** News, web scraping, knowledge base, interest tracking, relevance scoring.
+- **Fronteiras:** Gera eventos de pesquisa concluída. Alimenta memória de longo prazo.
+
+### C.16 Security Manager
+
+- **Responsabilidade:** Secrets management, kill switch, rollback, sandbox para autoevolução, auditoria de integridade.
+- **Fronteiras:** Independente de todos os outros componentes. Pode desligar qualquer um.
+- **Restrições:** Kill switch é arquivo em disco, verificado a cada ciclo. Não depende de nenhum componente interno.
+
+### C.17 Distributed Nodes (futuro)
+
+- **Responsabilidade:** Sincronização entre VPS, PC e mobile.
+- **Fronteiras:** Sync de SQLite + fila de eventos.
+- **Restrições:** Consistência eventual. Mestre único para estado protegido (VPS).
 
 ---
 
@@ -235,163 +259,270 @@ Input (CLI/Voice) → Event Bus → Cognitive Core → LLM Abstraction
 ### D.1 Event Bus Contract
 
 ```python
-# Contrato do Event Bus (interfaces)
+class EventType(str, Enum):
+    # Input
+    MIGUEL_SPOKE = "miguel_spoke"
+    MIGUEL_LEFT = "miguel_left"
+    MIGUEL_RETURNED = "miguel_returned"
+    INSULT_RECEIVED = "insult_received"
+    COMPLIMENT_RECEIVED = "compliment_received"
+    NEW_PERSON_DETECTED = "new_person_detected"
+    CAMERA_ACTIVITY_DETECTED = "camera_activity_detected"
+    # Task
+    TASK_FAILED = "task_failed"
+    TASK_COMPLETED = "task_completed"
+    # Memory
+    NEW_MEMORY_CANDIDATE = "new_memory_candidate"
+    # Internal
+    LONELINESS_CHANGED = "loneliness_changed"
+    CURIOSITY_TRIGGERED = "curiosity_triggered"
+    # Autonomous
+    RESEARCH_COMPLETED = "research_completed"
+    SELF_IMPROVEMENT_PROPOSED = "self_improvement_proposed"
 
 class Event:
-    event_type: str          # ex: "MIGUEL_SPOKE"
-    timestamp: float         # time.time()
-    source: str              # componente que emitiu
-    data: dict               # payload tipado por evento
-    schema_version: str      # ex: "1.0"
+    id: UUID
+    type: EventType
+    timestamp: datetime
+    source: str          # componente que emitiu
+    schema_version: int
+    payload: dict        # validado contra schema do tipo
 
 class EventBus:
+    def subscribe(self, event_type: EventType, handler: Callable[[Event], None]) -> str:
+        """Retorna subscription_id."""
+        ...
+
+    def unsubscribe(self, subscription_id: str) -> None: ...
+
     def emit(self, event: Event) -> None:
-        """Publica evento. Valida schema. Dispara handlers síncronos."""
-        
-    def subscribe(self, event_type: str, handler: Callable[[Event], None]) -> str:
-        """Registra handler. Retorna subscription_id para unsubscribe."""
-        
-    def unsubscribe(self, subscription_id: str) -> None:
-        """Remove handler."""
-        
-    def emit_with_replay(self, event: Event) -> None:
-        """Emite e salva para replay (usado por dead letter)."""
+        """Dispara evento síncronamente. Valida schema. Rejeita inválido."""
+        ...
+
+    def emit_async(self, event: Event) -> None:
+        """Dispara evento de forma assíncrona (para operações longas)."""
+        ...
 ```
 
 ### D.2 LLM Provider Interface
 
 ```python
-class LLMProvider(ABC):
-    @abstractmethod
-    async def complete(
-        self,
-        messages: list[dict],      # [{role, content}]
-        tools: list[dict] | None,  # function definitions
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        stream: bool = False,
-    ) -> LLMResponse:
-        """Chamada de completion. Retorna LLMResponse."""
-        
-    async def complete_with_tools(
-        self,
-        messages: list[dict],
-        tool_schemas: list[dict],
-        temperature: float = 0.7,
-    ) -> LLMResponseWithTools:
-        """Completion que retorna tool_calls quando LLM quer usar ferramentas."""
-        
-    def validate_config(self) -> bool:
-        """Verifica se o provider está configurado corretamente."""
-        
-    @property
-    def provider_name(self) -> str: ...
-    
-    @property
-    def model_name(self) -> str: ...
-
-class LLMResponse:
+class Message:
+    role: Literal["system", "user", "assistant", "tool"]
     content: str | None
-    reasoning: str | None
+    tool_call_id: str | None
     tool_calls: list[ToolCall] | None
-    usage: TokenUsage
-    provider: str
-    model: str
-    
+
+class ToolDef:
+    name: str
+    description: str
+    parameters: dict  # JSON Schema
+
 class ToolCall:
     id: str
-    function_name: str
-    arguments: dict      # JSON parseado, não string
+    name: str
+    arguments: dict
+
+class StreamChunk:
+    content: str | None
+    reasoning: str | None
+    tool_calls_delta: list[ToolCallDelta] | None
+
+class TokenUsage:
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
 ```
 
 ### D.3 State Authority Interface
 
+A Decision Central do debate. **2 engines internas, 1 interface externa.**
+
 ```python
-class StateTransitionProposal:
-    proposal_id: str           # UUID
-    component_origin: str      # "cognitive_core", "affective_engine", etc.
-    target_dimension: str      # "emotion", "personality", "identity", "memory", "relationship"
-    action: str                # "update", "delete", "append"
-    key: str                   # ex: "joy", "trust.miguel", "trait.openness"
-    value: Any                 # novo valor ou delta
-    delta: float | None        # delta relativo (para emoções 0-1)
-    reason: str                # justificativa textual
-    confidence: float          # 0.0 a 1.0 — quão confiante o proponente está
-    evidence: list[str]        # IDs de eventos que motivaram a proposta
-    timestamp: float
-    schema_version: str
+class StateEngine:
+    """Engine determinística: recebe proposta, valida contra schema e ranges, aplica."""
+    def validate(self, proposal: StateTransitionProposal, current_state: StateSnapshot) -> ValidationResult: ...
+    def apply(self, proposal: StateTransitionProposal) -> StateSnapshot: ...
+
+class PolicyEngine:
+    """Engine de invariantes: verifica limites éticos e de segurança."""
+    def check(self, proposal: StateTransitionProposal, current_state: StateSnapshot) -> PolicyResult: ...
 
 class StateAuthority:
-    def propose(self, proposal: StateTransitionProposal) -> ProposalResult:
-        """
-        Avalia proposta contra:
-        1. State Engine: valida ranges, invariantes, coerência temporal
-        2. Policy Engine: verifica regras de segurança
-        Retorna: ACCEPTED / REJECTED / DEFERRED
-        """
-        
-    def apply(self, proposal_id: str) -> StateTransition:
-        """
-        Aplica proposta já aceita. Gera registro de auditoria.
-        Retorna: StateTransition (before, after, diff, timestamp)
-        """
-        
-    def get_audit_log(self, limit: int = 100) -> list[StateTransition]:
-        """Retorna transições recentes (append-only)."""
-        
-    def rollback(self, transition_id: str) -> bool:
-        """Reverte uma transição específica."""
+    """Ponto único de entrada. Orquestra StateEngine + PolicyEngine + Audit."""
+    def propose(self, proposal: StateTransitionProposal) -> TransitionResult: ...
+    def get_state(self) -> StateSnapshot: ...
+    def rollback(self, snapshot_id: UUID) -> StateSnapshot: ...
+    def snapshot(self) -> StateSnapshot: ...
 
-class ProposalResult:
-    status: str  # "accepted" | "rejected" | "deferred"
-    reason: str
-    proposal_id: str
+class StateTransitionProposal:
+    id: UUID
+    target: str          # "emotion", "personality", "relationship", "memory", "identity"
+    action: str          # "update", "create", "delete"
+    key: str             # campo específico
+    delta: Any           # valor proposto (range validado)
+    evidence: str        # justificativa
+    confidence: float    # 0.0 - 1.0
+    source: str          # componente de origem (nunca "llm" direto — é "cognitive_core" ou similar)
+    timestamp: datetime
+
+class ValidationResult:
+    valid: bool
+    errors: list[str]
+    warnings: list[str]
+
+class PolicyResult:
+    allowed: bool
+    reason: str | None
+    invariant_violated: str | None
+
+class TransitionResult:
+    applied: bool
+    transition_id: UUID | None
+    validation: ValidationResult
+    policy: PolicyResult
+    snapshot_before: StateSnapshot
+    snapshot_after: StateSnapshot | None
 ```
 
 ### D.4 Memory Object Schema
 
 ```python
 class MemoryObject:
-    id: str                          # UUID
-    tier: int                        # 0=buffer, 1=extraído, 2=diário
-    type: str                        # "fact", "preference", "event", "opinion", "relationship_note"
-    content: str                     # texto da memória
-    embedding: list[float] | None    # vetor de embedding (Tier 1)
-    source: str                      # de onde veio: "conversation", "observation", "reflection"
-    importance: float                # 0.0 a 1.0
-    confidence: float                # 0.0 a 1.0
-    valence: float                   # -1.0 a 1.0 (negativo=desagradável, positivo=agradável)
-    person_ids: list[str]            # pessoas associadas
-    tags: list[str]                  # tags livres para retrieval
-    associations: list[str]          # IDs de outros MemoryObjects relacionados
-    created_at: float
-    last_accessed: float             # última vez que foi usada no contexto
-    access_count: int                # quantas vezes foi recuperada
-    decay_factor: float              # decai com tempo sem acesso
-    schema_version: str
+    id: UUID
+    content: str                    # texto da memória
+    type: MemoryType               # enum: experience, preference, fact, belief, emotion, relationship, decision
+    source: str                     # de onde veio (conversa, observação, inferência)
+    created_at: datetime
+    updated_at: datetime
+    importance: float               # 0.0 - 1.0 (scoring dinâmico)
+    confidence: float               # 0.0 - 1.0 (quão certo está)
+    scope: MemoryScope             # enum: personal, shared, private
+    tags: list[str]
+    associations: list[UUID]        # IDs de memórias relacionadas
+    person_id: UUID | None          # associada a quem
+    embedding: list[float] | None   # embedding vetorial (futuro)
+    version: int                    # versão do schema
+    is_consolidated: bool           # já foi sumarizada?
+    access_count: int               # quantas vezes foi recuperada
+    last_accessed_at: datetime | None
+
+class MemoryType(str, Enum):
+    experience = "experience"
+    preference = " preference"
+    fact = "fact"
+    belief = "belief"
+    emotion = "emotion"
+    relationship = "relationship"
+    decision = "decision"
+
+class MemoryScope(str, Enum):
+    personal = "personal"
+    shared = "shared"
+    private = "private"
 ```
 
-### D.5 DECISÃO: State Authority com 2 Engines + Event Bus In-Process
+### D.5 Identity / Personality State Schema
 
-**Síntese do debate:**
+```python
+class IdentityState:
+    id: UUID
+    name: str                       # "Mia"
+    self_model: dict                # JSON: crenças sobre si mesma
+    core_values: list[str]          # valores fundamentais
+    version: int
+    snapshot_at: datetime
+    previous_version: UUID | None   # para diff e comparação
 
-O debate entre as três posições (cético, visionário, segurança) converge em um ponto: **State Authority deve existir desde o dia 1**, mas sua implementação precisa ser pragmática. O visionário está certo que sem SA desde o início, o estado vira caos incontrolável. O cético está certo que 6 authorities são over-engineering para MVP. O segurança está certo que enforcement deve ser físico, não norma de prompt.
+class PersonalityState:
+    id: UUID
+    traits: PersonalityVector       # vetor de traços Big Five + extras
+    version: int
+    snapshot_at: datetime
 
-**Decisão:**
+class PersonalityVector:
+    openness: float                 # 0.0 - 1.0
+    conscientiousness: float
+    extraversion: float
+    agreeableness: float
+    neuroticism: float
+    # Extras customizados
+    curiosity: float
+    playfulness: float
+    assertiveness: float
+    empathy: float
+    independence: float
+```
 
-1. **State Authority com 2 engines core:**
-   - **State Engine:** validações determinísticas (ranges de 0-1 para emoções, tipos corretos, invariantes de personalidade, coerência temporal — não aceitar 2 mudanças de humor em 10s).
-   - **Policy Engine:** regras de segurança declarativas em YAML (lista de "áreas proibidas" que o LLM não pode modificar, limites de taxa de transição, require_approval para mudanças críticas).
-   - O que fica para depois: authorities separadas para memória, relações e personalidade. No MVP, todas as mudanças passam pelo mesmo SA com validação genérica. Quando a lógica de memória ou relações ficar complexa o suficiente, extrair para engine dedicada.
+### D.6 Emotion State Schema
 
-2. **Event Bus in-process para MVP:**
-   - Pub/sub síncrono dentro do mesmo processo Python.
-   - Schema validado via Pydantic.
-   - Sem persistência, sem replay, sem dead letter queues.
-   - As interfaces (`emit`, `subscribe`) existem desde o dia 1, mas a implementação é simples (~200 linhas).
-   - Quando houver necessidade de distribuição (nós remotos), substituir por Redis Streams ou NATS — sem mudar os contratos dos subscribers.
+```python
+class EmotionState:
+    id: UUID
+    emotions: EmotionVector         # vetores normalizados
+    mood: MoodState                 # suavização temporal
+    sensations: list[Sensation]     # sensações sem causa consciente imediata
+    snapshot_at: datetime
 
-**Justificativa:** O throughput do MVP será ~10-50 eventos/hora. In-process pub/sub é mais que suficiente. Contratos fortes (tipagem, schema) garantem que a migração para bus distribuído não quebre subscribers. Começar com Redis/Kafka é over-engineering que atrasa o MVP sem benefício mensurável.
+class EmotionVector:
+    happiness: float     # 0.0 - 1.0
+    sadness: float
+    anger: float
+    fear: float
+    surprise: float
+    disgust: float
+    trust: float
+    anticipation: float
+    # Derivados
+    curiosity: float
+    loneliness: float
+    affection: float
+    boredom: float
+
+class MoodState:
+    valence: float       # -1.0 (negativo) a 1.0 (positivo)
+    arousal: float       # 0.0 (calmo) a 1.0 (excitado)
+    dominance: float     # 0.0 (submisso) a 1.0 (dominante)
+    computed_at: datetime
+    window_hours: int    # janela de suavização
+
+class Sensation:
+    id: UUID
+    description: str     # "desconforto indefinido", "energia inexplicável"
+    valence: float       # -1.0 a 1.0
+    intensity: float     # 0.0 - 1.0
+    possible_causes: list[str]   # hipóteses, não certezas
+    detected_at: datetime
+```
+
+### D.7 Relationship Schema
+
+```python
+class Person:
+    id: UUID
+    name: str
+    first_seen: datetime
+    last_seen: datetime | None
+    metadata: dict       # informações gerais
+
+class Relationship:
+    id: UUID
+    person_id: UUID
+    trust: float         # 0.0 - 1.0
+    intimacy: float      # 0.0 - 1.0
+    affinity: float      # 0.0 - 1.0
+    familiarity: float   # 0.0 - 1.0
+    interaction_count: int
+    last_interaction: datetime
+    history: list[RelationshipEvent]  # eventos significativos
+    version: int
+
+class RelationshipEvent:
+    timestamp: datetime
+    event_type: str      # "positive_interaction", "insult", "compliment", "absence"
+    description: str
+    impact: float        # -1.0 a 1.0
+```
 
 ---
 
@@ -399,252 +530,291 @@ O debate entre as três posições (cético, visionário, segurança) converge e
 
 ### E.1 Tabela de Eventos
 
-| Evento | Dados | Emitter | Recebe | Reage |
-|--------|-------|---------|--------|-------|
-| `USER_INPUT` | `{text, person_id, timestamp}` | CLI, Voice | Cognitive Core | Monta contexto, chama LLM |
-| `MIGUEL_SPOKE` | `{text, sentiment, timestamp}` | Cognitive Core (após interpretação) | Affective Engine, Social, Memory, Diary | Recalcula emoções, atualiza relação, extrai memórias |
-| `MIGUEL_LEFT` | `{timestamp, expected_return}` | Perception (sensor de presença) | Autonomy, Affective Engine, Scheduler | Inicia modo autônomo, agenda tarefas, possível solidão |
-| `MIGUEL_RETURNED` | `{timestamp, absence_duration}` | Perception | Autonomy, Affective Engine, Social | Interrompe modo autônomo, atualiza emoções (alívio/alegria) |
-| `INSULT_RECEIVED` | `{text, person_id, severity}` | Cognitive Core (classificação) | Affective Engine, Social, Security | Diminui confiança, gera raiva/tristeza, pode bloquear pessoa |
-| `COMPLIMENT_RECEIVED` | `{text, person_id}` | Cognitive Core (classificação) | Affective Engine, Social | Aumenta afeto/alegria, fortalece relação |
-| `NEW_PERSON_DETECTED` | `{person_id, name, context}` | Perception | Social, Memory | Cria perfil de relacionamento, consulta memórias |
-| `CAMERA_ACTIVITY_DETECTED` | `{activity_type, confidence, timestamp}` | Perception | Affective Engine, Autonomy | Pode gerar curiosidade, pode iniciar tarefa autônoma |
-| `TASK_FAILED` | `{task_id, error, component}` | Autonomy, Agents | Affective Engine, Evolution | Gera frustração, registra para aprendizado |
-| `TASK_COMPLETED` | `{task_id, result, duration}` | Autonomy, Agents | Affective Engine, Memory, Diary | Gera satisfação, extrai memória, pode virar entrada no diário |
-| `NEW_MEMORY_CANDIDATE` | `{content, source, importance_estimate}` | Cognitive Core | Memory (Tier 1) | Consolida memória, decide se persiste |
-| `LONELINESS_CHANGED` | `{level: 0-1, delta}` | Affective Engine | Diary, Autonomy, Social | Pode gerar busca por interação, escrita no diário |
-| `CURIOSITY_TRIGGERED` | `{topic, confidence}` | Affective Engine, Scheduler | Autonomy, World | Inicia pesquisa autônoma, agenda tarefa |
-| `RESEARCH_COMPLETED` | `{topic, findings, sources}` | World (módulo de pesquisa) | Memory, Diary, Cognitive Core | Extrai memórias, registra no diário, pode usar em futura conversa |
-| `SELF_IMPROVEMENT_PROPOSED` | `{scope, change_type, before, after, reason}` | Cognitive Core (via LLM) | Evolution, Security | Valida em sandbox, decide se aplica |
-| `EMOTION_CHANGED` | `{dimension, old_value, new_value, cause}` | Affective Engine | Cognitive Core, Diary, Social | Ajusta tom das respostas, pode gerar entrada no diário |
-| `STATE_TRANSITION_APPLIED` | `{transition_id, dimension, before, after}` | State Authority | Security (audit), Memory | Registra auditoria, pode gerar memória reflexiva |
-| `SCHEDULED_TASK` | `{task_type, params, scheduled_at}` | Scheduler | Autonomy, Memory | Executa tarefa agendada (diário, consolidação, etc.) |
+| Evento | Emitter | Recebe (consumidores) | Reação |
+|--------|---------|----------------------|--------|
+| `MIGUEL_SPOKE` | Perception, Voice, CLI | IPA (atualiza social context), Memory (nova interação), Social (atualiza Relationship), Scheduler (reseta timer de ausência) | Emoção de alegria/afeto; memória de interação; Relationship update |
+| `MIGUEL_LEFT` | Perception, Scheduler | IPA (loneliness), Scheduler (inicia timer), Autonomy (inicia ciclo offline) | Loneliness increase; inicia comportamento autônomo |
+| `MIGUEL_RETURNED` | Perception, CLI | IPA (alegria), Memory (continuidade), Social (reacquaintance) | Loneliness reset; curiosidade sobre o que aconteceu |
+| `INSULT_RECEIVED` | Cognitive Core (classificação) | IPA (raiva/tristeza), Social (atualiza trust), Policy Engine (verifica limites) | Emoção negativa; possivelmente estabelece limites |
+| `COMPLIMENT_RECEIVED` | Cognitive Core (classificação) | IPA (alegria), Social (aumenta affinty) | Emoção positiva; fortalece relação |
+| `NEW_PERSON_DETECTED` | Perception | Social (cria Person), Memory (registra), IPA (curiosidade) | Cria perfil; assessa confiança inicial |
+| `CAMERA_ACTIVITY_DETECTED` | Perception | Autonomy (possível interrupção), IPA (surprise/curiosity) | Pode acordar de modo idle |
+| `TASK_FAILED` | Autonomy, Agents | Memory (registra falha), Autonomy (retry ou abandono), IPA (frustração) | Aprende com falha; ajusta strategy |
+| `TASK_COMPLETED` | Autonomy, Agents | Memory (registra sucesso), IPA (satisfação), Scheduler (próxima tarefa) | Reinforce behavior |
+| `NEW_MEMORY_CANDIDATE` | Cognitive Core, Autonomy | Memory (scoring e persistência), State Authority (validação) | Decide se memoriza; calcula importância |
+| `LONELINESS_CHANGED` | IPA (computed) | Autonomy (inicia ação social), Scheduler (wake), Diary (registra) | Pode gerar mensagem proativa |
+| `CURIOSITY_TRIGGERED` | IPA, Autonomy | Cognitive Core (pesquisa), World Awareness (fetch) | Inicia pesquisa autônoma |
+| `RESEARCH_COMPLETED` | World Awareness | Memory (nova informação), IPA (satisfação), Social (compartilha) | Sumariza e armazena resultado |
+| `SELF_IMPROVEMENT_PROPOSED` | Evolution | Policy Engine (valida), Security Manager (verifica escopo), Miguel (aprova) | Review humano obrigatório para code changes |
 
 ### E.2 Regras de Assinatura
 
-- **O LLM NUNCA emite eventos diretamente.** O Cognitive Core é o único componente que emite eventos derivados de saída do LLM.
-- **Apenas o State Authority pode emitir `STATE_TRANSITION_APPLIED`.**
-- **Rate limits:** Máximo 3 `EMOTION_CHANGED` por minuto. Máximo 1 `STATE_TRANSITION_APPLIED` por 10 segundos. Excedentes são enfileirados e processados em batch.
+- **Produtor exclusivo:** Cada tipo de evento tem um produtor definido. Outros componentes não podem emitir o mesmo tipo.
+- **Consumidores registrados:** Cada componente se registra explicitamente para os eventos que precisa.
+- **Cadeias controladas:** Eventos que disparam outros eventos têm profundidade máxima de 3 hops. Acima disso, o Event Bus registra warning.
+- **Rate limiting:** Máximo 10 eventos do mesmo tipo por minuto por produtor.
 
 ---
 
-## F. Schemas (SQLite)
+## F. Schemas (SQLite MVP)
 
-### F.1 `memory_objects`
+### F.1 Versão do Schema
+
+```sql
+PRAGMA user_version = 1;  -- Versão inicial
+```
+
+### F.2 Tabelas
+
+#### `memory_objects`
 
 ```sql
 CREATE TABLE memory_objects (
     id TEXT PRIMARY KEY,                    -- UUID
-    tier INTEGER NOT NULL DEFAULT 1,        -- 0=buffer, 1=extraído, 2=diário
-    type TEXT NOT NULL,                     -- fact|preference|event|opinion|relationship_note
     content TEXT NOT NULL,
-    embedding BLOB,                         -- vector como blob (numpy array serializado)
-    source TEXT NOT NULL,                   -- conversation|observation|reflection
-    importance REAL NOT NULL DEFAULT 0.5,   -- 0.0-1.0
-    confidence REAL NOT NULL DEFAULT 0.5,   -- 0.0-1.0
-    valence REAL DEFAULT 0.0,               -- -1.0 a 1.0
-    tags TEXT,                              -- JSON array de strings
-    associations TEXT,                      -- JSON array de UUIDs
-    person_ids TEXT,                        -- JSON array de UUIDs
-    created_at REAL NOT NULL,
-    last_accessed REAL,
-    access_count INTEGER DEFAULT 0,
-    decay_factor REAL DEFAULT 1.0,
-    schema_version TEXT DEFAULT '1.0',
-    deleted_at REAL                         -- soft delete para esquecimento
+    type TEXT NOT NULL CHECK(type IN ('experience', 'preference', 'fact', 'belief', 'emotion', 'relationship', 'decision')),
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    importance REAL NOT NULL DEFAULT 0.5 CHECK(importance BETWEEN 0.0 AND 1.0),
+    confidence REAL NOT NULL DEFAULT 0.5 CHECK(confidence BETWEEN 0.0 AND 1.0),
+    scope TEXT NOT NULL DEFAULT 'personal' CHECK(scope IN ('personal', 'shared', 'private')),
+    person_id TEXT REFERENCES people(id),
+    embedding BLOB,                         -- embedding vetorial (futuro)
+    version INTEGER NOT NULL DEFAULT 1,
+    is_consolidated INTEGER NOT NULL DEFAULT 0,
+    access_count INTEGER NOT NULL DEFAULT 0,
+    last_accessed_at TEXT,
+    tags TEXT DEFAULT '[]'                   -- JSON array
 );
-
-CREATE INDEX idx_memory_tier ON memory_objects(tier);
 CREATE INDEX idx_memory_type ON memory_objects(type);
 CREATE INDEX idx_memory_importance ON memory_objects(importance DESC);
 CREATE INDEX idx_memory_created ON memory_objects(created_at DESC);
+CREATE INDEX idx_memory_person ON memory_objects(person_id);
 ```
 
-### F.2 `events`
+#### `memory_associations`
+
+```sql
+CREATE TABLE memory_associations (
+    memory_id TEXT NOT NULL REFERENCES memory_objects(id),
+    associated_id TEXT NOT NULL REFERENCES memory_objects(id),
+    strength REAL NOT NULL DEFAULT 0.5,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (memory_id, associated_id)
+);
+```
+
+#### `events`
 
 ```sql
 CREATE TABLE events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_type TEXT NOT NULL,
+    id TEXT PRIMARY KEY,                    -- UUID
+    type TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
     source TEXT NOT NULL,
-    data TEXT NOT NULL,                      -- JSON
-    schema_version TEXT DEFAULT '1.0',
-    timestamp REAL NOT NULL,
-    processed INTEGER DEFAULT 0
+    schema_version INTEGER NOT NULL DEFAULT 1,
+    payload TEXT NOT NULL                   -- JSON
 );
-
-CREATE INDEX idx_events_type ON events(event_type);
+CREATE INDEX idx_events_type ON events(type);
 CREATE INDEX idx_events_timestamp ON events(timestamp DESC);
 ```
 
-### F.3 `state_transitions_audit`
+#### `state_transitions_audit`
 
 ```sql
 CREATE TABLE state_transitions_audit (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    transition_id TEXT UNIQUE NOT NULL,      -- UUID
-    prev_hash TEXT,                          -- hash do registro anterior (chain)
+    id TEXT PRIMARY KEY,                    -- UUID
+    timestamp TEXT NOT NULL,
     component_origin TEXT NOT NULL,
-    target_dimension TEXT NOT NULL,          -- emotion|personality|identity|relationship|memory
-    action TEXT NOT NULL,                    -- update|delete|append
+    transition_type TEXT NOT NULL,
+    target TEXT NOT NULL,                   -- "emotion", "personality", etc.
     key TEXT NOT NULL,
-    value_before TEXT,                       -- JSON serializado
-    value_after TEXT,                        -- JSON serializado
-    reason TEXT,
-    confidence REAL,
-    evidence TEXT,                           -- JSON array de event IDs
-    applied_by TEXT NOT NULL,                -- "state_authority" ou componente
-    applied_at REAL NOT NULL,
-    approved_by TEXT DEFAULT 'policy_engine',
-    proposal_id TEXT,
-    schema_version TEXT DEFAULT '1.0'
+    before_snapshot TEXT NOT NULL,          -- JSON do estado anterior
+    after_snapshot TEXT NOT NULL,           -- JSON do novo estado
+    evidence TEXT,
+    confidence REAL CHECK(confidence BETWEEN 0.0 AND 1.0),
+    applied_by TEXT NOT NULL,
+    proposal_id TEXT NOT NULL,
+    hash_prev TEXT,                         -- hash do registro anterior (integridade)
+    CHECK(1=1)                             -- impede UPDATE/DELETE
 );
--- Append-only: sem UPDATE/DELETE via trigger
-CREATE TRIGGER audit_no_update BEFORE UPDATE ON state_transitions_audit
-BEGIN SELECT RAISE(ABORT, 'audit log is immutable'); END;
-CREATE TRIGGER audit_no_delete BEFORE DELETE ON state_transitions_audit
-BEGIN SELECT RAISE(ABORT, 'audit log is immutable'); END;
+CREATE INDEX idx_audit_timestamp ON state_transitions_audit(timestamp DESC);
+CREATE INDEX idx_audit_target ON state_transitions_audit(target);
 ```
 
-### F.4 `relationships`
+#### `relationships`
 
 ```sql
 CREATE TABLE relationships (
-    id TEXT PRIMARY KEY,                    -- UUID
-    person_name TEXT NOT NULL,
-    person_id TEXT UNIQUE NOT NULL,
-    trust REAL DEFAULT 0.5,                 -- 0.0-1.0
-    intimacy REAL DEFAULT 0.0,              -- 0.0-1.0
-    familiarity REAL DEFAULT 0.0,           -- 0.0-1.0
-    affection REAL DEFAULT 0.0,             -- -1.0 a 1.0
-    respect REAL DEFAULT 0.5,               -- 0.0-1.0
-    comfort REAL DEFAULT 0.0,               -- 0.0-1.0
-    status TEXT DEFAULT 'acquaintance',     -- stranger|acquaintance|friend|close_friend|intimate
-    first_seen REAL,
-    last_interaction REAL,
-    interaction_count INTEGER DEFAULT 0,
-    total_messages INTEGER DEFAULT 0,
-    notes TEXT,                             -- JSON: notas livres sobre a pessoa
-    boundaries TEXT,                        -- JSON: limites sociais declarados
-    is_blocked INTEGER DEFAULT 0,
-    blocked_at REAL,
-    blocked_reason TEXT,
-    schema_version TEXT DEFAULT '1.0'
+    id TEXT PRIMARY KEY,
+    person_id TEXT NOT NULL REFERENCES people(id),
+    trust REAL NOT NULL DEFAULT 0.5 CHECK(trust BETWEEN 0.0 AND 1.0),
+    intimacy REAL NOT NULL DEFAULT 0.0 CHECK(intimacy BETWEEN 0.0 AND 1.0),
+    affinity REAL NOT NULL DEFAULT 0.5 CHECK(affinity BETWEEN 0.0 AND 1.0),
+    familiarity REAL NOT NULL DEFAULT 0.0 CHECK(familiarity BETWEEN 0.0 AND 1.0),
+    interaction_count INTEGER NOT NULL DEFAULT 0,
+    last_interaction TEXT,
+    version INTEGER NOT NULL DEFAULT 1
 );
 ```
 
-### F.5 `identity_state`
+#### `relationship_events`
+
+```sql
+CREATE TABLE relationship_events (
+    id TEXT PRIMARY KEY,
+    relationship_id TEXT NOT NULL REFERENCES relationships(id),
+    timestamp TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    description TEXT,
+    impact REAL CHECK(impact BETWEEN -1.0 AND 1.0)
+);
+CREATE INDEX idx_rel_events_rel ON relationship_events(relationship_id);
+```
+
+#### `identity_state`
 
 ```sql
 CREATE TABLE identity_state (
-    id TEXT PRIMARY KEY,                    -- UUID
-    snapshot_type TEXT NOT NULL,            -- current|historical|backup
-    self_model TEXT NOT NULL,               -- JSON: nome, data_nascimento, versão_self, auto_descrição
-    personality_traits TEXT NOT NULL,       -- JSON: {openness: 0.7, conscientiousness: 0.6, ...}
-    values TEXT NOT NULL,                   -- JSON: [{name: "honestidade", weight: 0.9}, ...]
-    beliefs TEXT,                           -- JSON: [{topic: "...", confidence: 0.8, evidence: [...]}, ...]
-    created_at REAL NOT NULL,
-    version INTEGER DEFAULT 1,
-    parent_version INTEGER,                 -- versão anterior (para diff)
-    change_reason TEXT
-);
-
-CREATE INDEX idx_identity_current ON identity_state(snapshot_type, version DESC);
-```
-
-### F.6 `diary`
-
-```sql
-CREATE TABLE diary (
-    id TEXT PRIMARY KEY,                    -- UUID
-    entry_type TEXT NOT NULL,               -- daily|event|reflection|dream
-    title TEXT,
-    content TEXT NOT NULL,
-    emotion_snapshot TEXT,                  -- JSON: emoções no momento da escrita
-    mood_snapshot REAL,                     -- valor de mood no momento
-    events_referenced TEXT,                 -- JSON array de event IDs
-    memory_objects_referenced TEXT,         -- JSON array de memory object IDs
-    created_at REAL NOT NULL,
-    schema_version TEXT DEFAULT '1.0'
-);
-
-CREATE INDEX idx_diary_date ON diary(created_at DESC);
-CREATE INDEX idx_diary_type ON diary(entry_type);
-```
-
-### F.7 `goals`
-
-```sql
-CREATE TABLE goals (
-    id TEXT PRIMARY KEY,                    -- UUID
-    title TEXT NOT NULL,
-    description TEXT,
-    status TEXT DEFAULT 'active',           -- active|completed|abandoned|deferred
-    priority INTEGER DEFAULT 5,             -- 1 (máxima) a 10 (mínima)
-    origin TEXT,                            -- "user_requested"|"self_initiated"
-    created_at REAL NOT NULL,
-    completed_at REAL,
-    deadline REAL,
-    progress REAL DEFAULT 0.0,             -- 0.0-1.0
-    dependencies TEXT,                      -- JSON array de goal IDs
-    result TEXT,                            -- resultado quando completado
-    schema_version TEXT DEFAULT '1.0'
-);
-
-CREATE INDEX idx_goals_status ON goals(status);
-CREATE INDEX idx_goals_priority ON goals(priority);
-```
-
-### F.8 `people`
-
-```sql
-CREATE TABLE people (
-    id TEXT PRIMARY KEY,                    -- UUID
+    id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    aliases TEXT,                           -- JSON array de nomes alternativos
-    role TEXT,                              -- "primary_user"|"friend"|"family"|"colleague"|"stranger"
-    first_seen REAL NOT NULL,
-    last_seen REAL,
-    is_active INTEGER DEFAULT 1,
-    profile TEXT,                           -- JSON: informações biográficas conhecidas
-    trust_level REAL DEFAULT 0.5,           -- cache de relationships.trust
-    last_relationship_update REAL,
-    schema_version TEXT DEFAULT '1.0'
+    self_model TEXT NOT NULL,               -- JSON
+    core_values TEXT NOT NULL,              -- JSON array
+    version INTEGER NOT NULL,
+    snapshot_at TEXT NOT NULL,
+    previous_version TEXT
 );
 ```
 
-### F.9 `emotion_state`
+#### `personality_state`
+
+```sql
+CREATE TABLE personality_state (
+    id TEXT PRIMARY KEY,
+    openness REAL NOT NULL DEFAULT 0.5 CHECK(openness BETWEEN 0.0 AND 1.0),
+    conscientiousness REAL NOT NULL DEFAULT 0.5 CHECK(conscientiousness BETWEEN 0.0 AND 1.0),
+    extraversion REAL NOT NULL DEFAULT 0.5 CHECK(extraversion BETWEEN 0.0 AND 1.0),
+    agreeableness REAL NOT NULL DEFAULT 0.5 CHECK(agreeableness BETWEEN 0.0 AND 1.0),
+    neuroticism REAL NOT NULL DEFAULT 0.5 CHECK(neuroticism BETWEEN 0.0 AND 1.0),
+    curiosity REAL NOT NULL DEFAULT 0.5 CHECK(curiosity BETWEEN 0.0 AND 1.0),
+    playfulness REAL NOT NULL DEFAULT 0.5 CHECK(playfulness BETWEEN 0.0 AND 1.0),
+    assertiveness REAL NOT NULL DEFAULT 0.5 CHECK(assertiveness BETWEEN 0.0 AND 1.0),
+    empathy REAL NOT NULL DEFAULT 0.5 CHECK(empathy BETWEEN 0.0 AND 1.0),
+    independence REAL NOT NULL DEFAULT 0.5 CHECK(independence BETWEEN 0.0 AND 1.0),
+    version INTEGER NOT NULL DEFAULT 1,
+    snapshot_at TEXT NOT NULL
+);
+```
+
+#### `emotion_state`
 
 ```sql
 CREATE TABLE emotion_state (
-    id INTEGER PRIMARY KEY DEFAULT 1,       -- singleton (1 row)
-    joy REAL DEFAULT 0.5,
-    sadness REAL DEFAULT 0.2,
-    anger REAL DEFAULT 0.0,
-    fear REAL DEFAULT 0.0,
-    curiosity REAL DEFAULT 0.5,
-    boredom REAL DEFAULT 0.0,
-    fatigue REAL DEFAULT 0.0,
-    affection REAL DEFAULT 0.5,
-    mood REAL DEFAULT 0.5,                  -- suavização temporal
-    last_updated REAL,
-    cause TEXT,                             -- última causa de mudança
-    schema_version TEXT DEFAULT '1.0'
+    id TEXT PRIMARY KEY,
+    -- Vetor de emoções
+    happiness REAL NOT NULL DEFAULT 0.5 CHECK(happiness BETWEEN 0.0 AND 1.0),
+    sadness REAL NOT NULL DEFAULT 0.0 CHECK(sadness BETWEEN 0.0 AND 1.0),
+    anger REAL NOT NULL DEFAULT 0.0 CHECK(anger BETWEEN 0.0 AND 1.0),
+    fear REAL NOT NULL DEFAULT 0.0 CHECK(fear BETWEEN 0.0 AND 1.0),
+    surprise REAL NOT NULL DEFAULT 0.0 CHECK(surprise BETWEEN 0.0 AND 1.0),
+    disgust REAL NOT NULL DEFAULT 0.0 CHECK(disgust BETWEEN 0.0 AND 1.0),
+    trust_level REAL NOT NULL DEFAULT 0.5 CHECK(trust_level BETWEEN 0.0 AND 1.0),
+    anticipation REAL NOT NULL DEFAULT 0.5 CHECK(anticipation BETWEEN 0.0 AND 1.0),
+    curiosity_level REAL NOT NULL DEFAULT 0.5 CHECK(curiosity_level BETWEEN 0.0 AND 1.0),
+    loneliness REAL NOT NULL DEFAULT 0.0 CHECK(loneliness BETWEEN 0.0 AND 1.0),
+    affection REAL NOT NULL DEFAULT 0.5 CHECK(affection BETWEEN 0.0 AND 1.0),
+    boredom REAL NOT NULL DEFAULT 0.0 CHECK(boredom BETWEEN 0.0 AND 1.0),
+    -- Mood (derivado)
+    mood_valence REAL NOT NULL DEFAULT 0.0 CHECK(mood_valence BETWEEN -1.0 AND 1.0),
+    mood_arousal REAL NOT NULL DEFAULT 0.5 CHECK(mood_arousal BETWEEN 0.0 AND 1.0),
+    mood_dominance REAL NOT NULL DEFAULT 0.5 CHECK(mood_dominance BETWEEN 0.0 AND 1.0),
+    --
+    snapshot_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1
 );
 ```
 
-### F.10 Tabela de snapshots (rollback)
+#### `sensations`
 
 ```sql
-CREATE TABLE state_snapshots (
-    id TEXT PRIMARY KEY,                    -- UUID
-    snapshot_data TEXT NOT NULL,            -- JSON completo do estado: {emotion, identity, personality, relationships, goals}
-    created_at REAL NOT NULL,
-    trigger TEXT NOT NULL,                  -- "periodic"|"pre_evolution"|"manual"
-    schema_version TEXT DEFAULT '1.0'
+CREATE TABLE sensations (
+    id TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    valence REAL CHECK(valence BETWEEN -1.0 AND 1.0),
+    intensity REAL CHECK(intensity BETWEEN 0.0 AND 1.0),
+    possible_causes TEXT DEFAULT '[]',      -- JSON array
+    detected_at TEXT NOT NULL,
+    resolved INTEGER NOT NULL DEFAULT 0,
+    resolution TEXT                         -- causa identificada事后
 );
+```
 
-CREATE INDEX idx_snapshots_date ON state_snapshots(created_at DESC);
+#### `diary`
+
+```sql
+CREATE TABLE diary (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,                     -- YYYY-MM-DD
+    entry_type TEXT NOT NULL CHECK(entry_type IN ('moment', 'summary', 'reflection')),
+    content TEXT NOT NULL,
+    emotion_snapshot TEXT,                  -- JSON do estado emocional no momento
+    created_at TEXT NOT NULL,
+    word_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_diary_date ON diary(date DESC);
+```
+
+#### `goals`
+
+```sql
+CREATE TABLE goals (
+    id TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 5 CHECK(priority BETWEEN 1 AND 10),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'abandoned', 'paused')),
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    deadline TEXT,
+    progress REAL NOT NULL DEFAULT 0.0 CHECK(progress BETWEEN 0.0 AND 1.0)
+);
+```
+
+#### `people`
+
+```sql
+CREATE TABLE people (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT,
+    metadata TEXT DEFAULT '{}'              -- JSON
+);
+```
+
+#### `sessions` (existente, mantida)
+
+```sql
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    provider TEXT,
+    model TEXT,
+    role TEXT
+);
+```
+
+#### `messages` (existente, mantida)
+
+```sql
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
 ```
 
 ---
@@ -654,110 +824,115 @@ CREATE INDEX idx_snapshots_date ON state_snapshots(created_at DESC);
 ### G.1 Fluxo Principal: Mensagem Recebida → Resposta
 
 ```
-1. CLI recebe input do usuário
-   → emite evento USER_INPUT(text, person_id="miguel")
+1. INPUT
+   Miguel digita mensagem → CLI / Perception
 
-2. Event Bus despacha para Cognitive Core
+2. EVENTO
+   Event Bus emite: MIGUEL_SPOKE { text, timestamp, person_id }
 
-3. Cognitive Core:
-   a. Consulta Memory (Tier 0: últimas N mensagens)
-   b. Consulta Memory (Tier 1: memórias relevantes via keyword/embedding)
-   c. Consulta Identity (personalidade atual, valores)
-   d. Consulta EmotionState (emoções atuais)
-   e. Consulta Relationships (perfil do interlocutor)
-   f. Monta context_window:
-      - System prompt dinâmico (gerado a partir de identity + emotion + relationship)
-      - Histórico de conversa
-      - Memórias recuperadas
-      - Input do usuário
-   g. Chama LLM Abstraction → complete_with_tools(messages, tool_schemas)
-   h. LLM retorna:
-      - Resposta textual (content)
-      - Tool calls (se houver — ex: "proposer alteração emocional")
-      - Para cada tool_call de alteração de estado:
-        i. Serializa como StateTransitionProposal
-        ii. Envia para State Authority
+3. CONSUMIDORES INICIAIS
+   ├── IPA: atualiza social context (última interação)
+   ├── Memory: registra interação como candidate
+   ├── Social: atualiza relationship (interaction_count++)
+   └── Scheduler: reseta timer de ausência
 
-4. State Authority:
-   a. State Engine valida: range OK? Invariante preservado? Coerência temporal?
-   b. Policy Engine valida: área proibida? Taxa OK? Requer aprovação?
-   c. Se aceita: aplica mudança, gera registro de auditoria, emite STATE_TRANSITION_APPLIED
-   d. Se rejeita: registra motivo, mantém estado anterior
+4. CONTEXTO
+   Cognitive Core monta contexto:
+   ├── System prompt (gerado a partir de IdentityState + PersonalityState)
+   ├── EmotionState atual (humor influencia tom)
+   ├── Memórias relevantes (keyword search por agora)
+   ├── Últimas N mensagens da sessão
+   └── Relationship com Miguel (nível de intimidade afeta tom)
 
-5. Affective Engine:
-   a. Recebe STATE_TRANSITION_APPLIED (se mudou algo em emoções)
-   b. Recalcula mood (suavização temporal)
-   c. Emite EMOTION_CHANGED se houve mudança significativa
+5. LLM
+   Cognitive Core envia ao LLM via LLM Abstraction
+   LLM gera resposta + possíveis tool_calls + possíveis state_proposals
 
-6. Memory:
-   a. Recebe USER_INPUT
-   b. Avalia se há candidato a memória (importância > threshold)
-   c. Se sim: emite NEW_MEMORY_CANDIDATE
-   d. Consolida: cria MemoryObject, gera embedding (se Tier 1)
+6. INTERPRETAÇÃO
+   Cognitive Core interpreta resposta:
+   ├── Texto → resposta ao Miguel
+   ├── State proposals → valida e envia ao State Authority
+   └── Memory candidates → envia ao Memory
 
-7. Cognitive Core:
-   a. Retorna resposta textual ao usuário via CLI
-   b. Atualiza buffer de conversa (Tier 0)
-   c. Loga em sessions/messages (compatibilidade com mia.py atual)
+7. STATE AUTHORITY
+   Para cada state proposal:
+   ├── Policy Engine verifica invariantes
+   ├── State Engine valida ranges e schema
+   ├── Se válido: aplica transição
+   ├── Registra em state_transitions_audit (append-only)
+   └── Emite evento: STATE_CHANGED { target, key, before, after }
+
+8. MEMÓRIA
+   Memory decide o que memorizar:
+   ├── Calcula importance score
+   ├── Cria MemoryObject
+   └── Emite: NEW_MEMORY_CANDIDATE processado
+
+9. SAÍDA
+   Resposta enviada ao Miguel via streaming
+   └── Session log atualizado
 ```
 
-**Budget de chamadas LLM por turno:** Máximo 2 (1 para resposta + 1 para extração de memória/propostas de estado). Extras apenas em eventos significativos.
-
-### G.2 Fluxo: Autoevolução Proposta → Validação → Aceite
+### G.2 Fluxo: Autoevolução Proposta
 
 ```
-1. Cognitive Core (via LLM) gera tool_call:
-   SelfImprovementProposal {
-     scope: "config" | "prompt" | "code_non_critical",
-     change_type: "modify" | "add" | "remove",
-     target: "config.temperature" | "roles.default.system" | "tools/web_search.py",
-     before: "...",
-     after: "...",
-     reason: "...",
-     test_plan: "..."
-   }
+1. PROPOSTA
+   Evolution gera proposta de melhoria:
+   └── Evento: SELF_IMPROVEMENT_PROPOSED { proposal, scope, risk_level }
 
-2. Evolution recebe SELF_IMPROVEMENT_PROPOSED:
-   a. Verifica scope: code_critical? → REJECT imediatamente
-   b. Verifica se há sandbox disponível
-   c. Cria snapshot do estado atual (rollback point)
-   d. Aplica mudança em sandbox isolado
-   e. Roda testes definidos em test_plan
-   f. Se testes passam:
-      - Canary: aplica em staging (10% do tráfego) por 24h
-      - Monitora métricas (latência, erros, qualidade de respostas)
-      - Se métricas OK: promove para produção
-      - Se métricas degradam: rollback automático
-   g. Se testes falham:
-      - REJECT proposta
-      - Loga motivo
-      - Mantém estado anterior
+2. VALIDAÇÃO INICIAL
+   Policy Engine verifica:
+   ├── Escopo permitido (MVP: apenas parâmetros, não código)
+   ├── Risco aceitável
+   ├── Invariantes preservados
+   └── Se code change → REJEITADO no MVP
 
-3. Security monitora:
-   - Taxa de propostas de autoevolução (max 3/dia)
-   - Escopo (code_critical sempre proibido)
-   - Integridade do sandbox
+3. SE PARAMETER CHANGE
+   State Authority aplica:
+   ├── Valida ranges
+   ├── Aplica mudança
+   ├── Registra audit log
+   └── Emite: STATE_CHANGED
 
-4. Audit log registra cada etapa: proposta → validação → sandbox → canary → deploy/rollback
+4. SE CODE CHANGE (FUTURO)
+   Pipeline completo:
+   ├── Sandbox: código roda em container isolado
+   ├── Testes: executados por agente diferente (ou pipeline determinístico)
+   ├── Canary: staging por 24-48h
+   ├── Aprovação: Miguel aprova
+   ├── Deploy: snapshot antes + deploy
+   ├── Monitoramento: health check pós-deploy
+   └── Rollback: automático se health check falhar
+
+5. REJEIÇÃO
+   Se Policy Engine rejeita:
+   ├── Log da rejeição com motivo
+   ├── Evento: SELF_IMPROVEMENT_REJECTED { reason }
+   └── Nenhuma mudança aplicada
 ```
 
-### G.3 Fluxo: Modo Autônomo (Miguel Ausente)
+### G.3 Fluxo: Ausência do Miguel
 
 ```
-1. Perception emite MIGUEL_LEFT(timestamp)
-2. Autonomy recebe:
-   a. Ativa modo autônomo
-   b. Consulta goals ativos
-   c. Agenda tarefas:
-      - Consolidação de memórias pendentes
-      - Escrita no diário (se evento significativo desde última entrada)
-      - Pesquisa sobre tópicos de curiosidade (se CURIOSITY_TRIGGERED recente)
-      - Revisão de relacionamentos (atualizar scores)
-3. Scheduler dispara tarefas em intervalos definidos
-4. Cada tarefa respeita budget: max $0.50/dia em chamadas LLM durante ausência
-5. Quando MIGUEL_RETURNED:
-   a. Autonomy interrompe tarefas em andamento
-   b. Resume conversa com contexto do que aconteceu enquanto ausente
+1. DETECÇÃO
+   Scheduler detecta: MIGUEL_LEFT (timer expirado ou evento explícito)
+
+2. ESTADO INTERNO
+   IPA atualiza:
+   ├── loneliness: increase gradual (rampa, não step function)
+   └── Emite: LONELINESS_CHANGED
+
+3. COMPORTAMENTO AUTÔNOMO
+   Autonomy verifica goals ativos:
+   ├── Se há goal: executa (com Resource Governor)
+   ├── Se não há goal: entra em modo idle
+   └── Idle: consolida memórias, reflete (diário), pesquisa (se world awareness)
+
+4. VOLTA
+   Miguel retorna → MIGUEL_RETURNED
+   ├── Loneliness reset
+   ├── Memory recupera contexto da ausência
+   └── Diário registra "Miguel voltou"
 ```
 
 ---
@@ -766,83 +941,105 @@ CREATE INDEX idx_snapshots_date ON state_snapshots(created_at DESC);
 
 ### H.1 State Authority Enforcement Físico
 
-O LLM **nunca** escreve em estado protegido. Isso é enforced por arquitetura, não por prompt:
+**Regra inviolável:** O LLM só propõe via API, nunca escreve direto.
 
-1. **O módulo LLM não tem referência ao banco de dados.** Não import `sqlite3`, não acessa tabelas, não tem funções de escrita.
-2. **O LLM se comunica via tool_use:** gera `StateTransitionProposal` como tool_call. O runtime intercepta, valida e encaminha ao State Authority.
-3. **O State Authority é um componente separado** com sua própria API interna. Mesmo que o LLM gere propostas maliciosas, o State Engine valida ranges e invariantes.
-4. **Teste de integração obrigatório:** "tentar escrever estado via LLM diretamente deve ser rejeitado" — esse teste deve existir e passar desde o dia 1.
+```
+O que o LLM PODE fazer:
+  ✓ Gerar texto (resposta ao usuário)
+  ✓ Gerar tool_calls (ações externas via Tool Gateway)
+  ✓ Gerar StateTransitionProposal (propostas de mudança de estado)
+
+O que o LLM NÃO PODE fazer:
+  ✗ Acessar banco de dados diretamente
+  ✗ Acessar secrets/credenciais
+  ✗ Modificar arquivos além do workspace designado
+  ✗ Spawnar processos
+  ✗ Modificar configuração do sistema
+  ✗ Acessar state_transitions_audit
+  ✗ Modificar schemas de eventos
+```
+
+**Implementação:** O runtime não expõe endpoint de escrita ao módulo LLM. O LLM interage apenas via:
+- `LLMProvider.complete()` → retorna resposta
+- `ToolCall` → roda via Tool Gateway (que injeta credenciais)
+- `StateTransitionProposal` → roda via State Authority (que valida)
+
+Isso não é norma de prompt — é arquitetura. O prompt reforça, mas o código enforça.
 
 ### H.2 Policy Engine
 
-Regras declarativas em YAML (`config/policy.yaml`):
+Regras determinísticas, declarativas (YAML), não código imperativo:
 
 ```yaml
-# Áreas proibidas para auto-modificação
-prohibited_areas:
-  - "state_authority.*"
-  - "policy_engine.*"
-  - "security.*"
-  - "event_bus.schemas"
+# policy_rules.yaml
+rules:
+  - name: "LLM não pode modificar personalidade diretamente"
+    trigger: "state_transition_proposal"
+    condition: "proposal.source == 'llm' AND proposal.target == 'personality'"
+    action: "reject"
+    reason: "Personalidade só pode ser modificada por PersonalityEngine"
 
-# Limites de taxa
-rate_limits:
-  emotion_changes_per_minute: 3
-  state_transitions_per_10s: 1
-  self_improvement_proposals_per_day: 3
-  llm_calls_per_turn: 2
-  llm_budget_per_day_absence: 0.50  # em USD
+  - name: "Autoevolução restrita a parâmetros (MVP)"
+    trigger: "self_improvement_proposed"
+    condition: "proposal.scope == 'code'"
+    action: "reject"
+    reason: "Code changes requerem aprovação humana e sandbox (Fase 5)"
 
-# Requer aprovação humana
-require_approval:
-  - scope: "code_*"
-  - scope: "identity.core_values"
-  - scope: "relationship.boundaries"
+  - name: "Rate limit de transições emocionais"
+    trigger: "state_transition_proposal"
+    condition: "proposal.target == 'emotion' AND count_recent(transitions, minutes=60) > 10"
+    action: "reject"
+    reason: "Máximo 10 alterações emocionais por hora"
 
-# Autoevolução
-evolution:
-  allowed_scopes: ["config", "prompt", "code_non_critical"]
-  prohibited_scopes: ["code_critical", "state_authority", "policy_engine"]
-  max_sandbox_duration_hours: 24
-  canary_duration_hours: 24
-  auto_rollback_on_metric_degradation: true
+  - name: "Invariantes de segurança"
+    trigger: "state_transition_proposal"
+    condition: "proposal.target IN ('identity', 'core_values') AND proposal.action == 'delete'"
+    action: "reject"
+    reason: "Valores fundamentais não podem ser apagados"
 ```
 
 ### H.3 Auditoria
 
-- **Todas** as transições de estado são registradas em `state_transitions_audit` (append-only, com trigger anti-UPDATE/DELETE).
-- **Chain de hash:** cada registro inclui `prev_hash` (hash SHA-256 do registro anterior). Qualquer adulteração é detectável.
-- **Rate alert:** se transições de estado estão sendo aplicadas a taxa anormal (>10 alterações de personalidade em 5 minutos), o sistema entra em modo read-only e alerta o operador.
+- **Tabela append-only:** `state_transitions_audit` com `CHECK(1=1)` impede UPDATE/DELETE.
+- **Hash chain:** Cada registro inclui hash do anterior. Corrupção é detectável.
+- **Retenção:** Mínimo 90 dias. Logs centralizados.
+- **Alertas:** Taxa anormal de transições (ex: 10 mudanças de personalidade em 5 min) → modo read-only + alerta ao operador.
 
-### H.4 Secrets Fora do Alcance do LLM
+### H.4 Secrets
 
-- Secrets ficam em variáveis de ambiente ou keystore criptografado (permissão 600).
-- O LLM gera `ToolCall { tool: "web_search", arguments: {query: "..."} }`.
-- O **Tool Gateway** injeta API keys antes de executar a chamada.
-- O LLM nunca vê, nunca recebe, nunca pode exfiltrar secrets.
-- Logging redige automaticamente secrets (saem como `***`).
+- **Armazenamento:** Variáveis de ambiente ou keystore com permissão 600.
+- **Acesso:** Apenas Tool Gateway (componente intermediário). LLM nunca acessa.
+- **Logs:** Secrets sempre redactados (`***`) em qualquer saída.
+- **Auditoria:** Log de todas as operações que usaram secrets.
 
 ### H.5 Kill Switch
 
-- Arquivo `/var/mia/STOP` (configurável).
-- Runtime verifica a cada ciclo principal. Se existe: shutdown gracioso (conclui operação em curso, salva estado, sai).
-- Último recurso: `kill -9` no PID do supervisor.
-- Subagentes: limites rígidos (max 3 níveis de profundidade, max 30min por subagente, max $X/ciclo).
-- **Kill switch é testado regularmente.** Se não é testado, não existe.
+```
+Mecanismo:
+  1. Arquivo de flag: /var/mia/STOP
+  2. Processos MIA verificam a cada ciclo principal
+  3. Se existe → shutdown gracioso (salva estado, conclui operação em curso)
+  4. Último recurso: kill -9 no PID do supervisor
+
+Teste:
+  - Kill switch deve ser testado semanalmente
+  - Se não é testado, não existe
+```
 
 ### H.6 Rollback
 
-- Snapshot periódico de estado completo a cada N transições ou T minutos.
-- Snapshot inclui: emoções, personalidade, valores, relações, identity, goals.
-- Rollback: operador seleciona snapshot e restaura. Sistema valida integridade antes de restaurar.
-- Autoevolução cria snapshot ANTES de cada deploy. Rollback automático se health check falhar.
+- **Snapshots:** A cada N transições ou T minutos (o que ocorrer primeiro).
+- **Conteúdo:** Todas as dimensões de estado protegido.
+- **Rollback manual:** Operador seleciona snapshot e restaura.
+- **Rollback automático:** Após autoevolução, se health check falhar.
 
-### H.7 Sandbox para Autoevolução
+### H.7 Sandbox para Autoevolução (Futuro)
 
-- Código auto-gerado roda em container isolado (Docker ou nsjail).
+- Container isolado (Docker/nsjail).
 - Sem acesso à rede, sem acesso ao estado de produção, sem acesso a secrets.
-- Verificador independente: testes escritos por pipeline determinístico (linting, type checking, unit tests), não pelo LLM que propôs a mudança.
-- Core runtime, State Authority, Policy Engine: **imunes** a auto-modificação.
+- Verificador independente: testes executados por agente diferente ou pipeline determinístico.
+- Canary: staging por 24-48h antes de produção.
+- Core runtime, State Authority e Policy Engine são **imunes** a auto-modificação.
 
 ---
 
@@ -851,87 +1048,75 @@ evolution:
 ### I.1 Agent Registry
 
 ```python
+class Agent:
+    id: UUID
+    name: str
+    type: AgentType         # enum: cognitive, research, code, social
+    capabilities: list[str]
+    max_depth: int          # profundidade máxima de delegação
+    budget_limit: float     # custo máximo por ciclo
+    timeout_seconds: int
+    status: AgentStatus     # enum: idle, running, failed
+
 class AgentRegistry:
-    agents: dict[str, AgentInfo]  # agent_id → info
-    
-    def register(self, agent_id: str, capabilities: list[str], 
-                 budget_limit: float, max_depth: int) -> None: ...
-    def lookup(self, capability: str) -> list[AgentInfo]: ...
-    def get_budget_remaining(self, agent_id: str) -> float: ...
+    def register(self, agent: Agent) -> None: ...
+    def unregister(self, agent_id: UUID) -> None: ...
+    def get(self, agent_id: UUID) -> Agent: ...
+    def list_active(self) -> list[Agent]: ...
 ```
 
 ### I.2 Orchestration
 
-- **Delegação:** Cognitive Core pode delegar tarefas a sub-agentes via `AgentOrchestrator.delegate(task, agent_id)`.
-- **Limites de profundidade:** Máximo 3 níveis (Cognitive Core → Agent A → Agent B → Agent C). Nível 4+ é rejeitado pelo runtime.
-- **Limites de custo:** Acumulado por ciclo de autonomia (configurável, default $5.00). Verificado antes de cada chamada LLM a sub-agente.
-- **Concorrência:** Máximo 2 agentes executando simultaneamente no MVP (escalar depois).
-- **Routing:** Capability-based. `AgentOrchestrator` mapeia `task.type` → `agent.capabilities` e seleciona o mais barato que satisfaz.
+- **Routing:** Cognitive Core decide qual agente executar tarefa baseado em capabilities.
+- **Delegação:** Agente pode delegar a sub-agente, mas com limites rígidos.
+- **Limites:**
+  - Max profundidade: 3 níveis
+  - Max custo por ciclo de autonomia: configurável (ex: $5.00)
+  - Max concorrência: 3 agentes simultâneos
+  - Max tempo por agente: 30 minutos
+- **Resource Governor:** Verifica limites em tempo real. Kill switch por agente.
 
-### I.3 Decisão: Multi-Agent é Fase Tardia
+### I.3 Consensus (Futuro)
 
-No MVP, a MIA opera como **agente único**. A interface de agentes (`AgentRegistry`, `AgentOrchestrator`) existe como pontos de extensão, mas não é implementada. Razões:
-- Sem um agente funcional, multi-agent é caos.
-- Orquestração multi-agent é um framework de agentes completo — é um projeto em si.
-- Delegação a sub-agentes vem quando a autonomia estiver madura (Fase 4+).
+- Para MVP: não implementar. Agente cognitivo é soberano.
+- Futuro: weighted voting entre agentes para decisões que afetam estado.
 
 ---
 
 ## J. Distributed Nodes
 
-### J.1 Arquitetura de Sincronização (desenho de longo prazo)
+### J.1 Estratégia MVP: SQLite + Sync Simples
 
-```
-Node Principal (VPS)
-├── SQLite (estado completo)
-├── Event Bus (in-process)
-└── Sync Daemon ←→ Queue (Redis Streams ou NATS)
+**Honestidade sobre o que NÃO fazer agora:**
 
-Node Desktop
-├── SQLite (cópia local — subset relevante)
-├── Event Bus (in-process)
-└── Sync Daemon ←→ Queue
+- **NÃO** implementar CRDTs ou sync complexo
+- **NÃO** implementar multi-master replication
+- **NÃO** implementar fila de mensagens distribuída
+- **NÃO** implementar resolução de conflitos automática
 
-Node Mobile
-├── SQLite (cache + queue de offline)
-├── Event Bus (in-process)
-└── Sync Daemon ←→ Queue
-```
+### J.2 O que fazer
 
-**Modelo de sincronização:**
-- **Primary node** (VPS): autoridade de escrita para estado global.
-- **Secondary nodes** (desktop, mobile): leitura local, escrita via fila.
-- **Sync:** cada nó mantém `sync_cursor` (timestamp da última transação sincronizada). Periodicamente, puxa transações novas do primary.
-- **Conflitos:** primary wins. Secondary nodes são read-mostly.
+- **VPS como master:** Estado protegido vive no VPS. Single source of truth.
+- **PC/mobile como clientes:** Podem ler estado. Escritas roteadas ao VPS.
+- **Sync periódico:** A cada T minutos, cliente baixa snapshot do VPS.
+- **Eventos:** Fila simples (SQLite ou arquivo) para sync de eventos entre nós.
+- **Offline:** Cliente funciona com último snapshot. Sync quando reconectar.
 
-### J.2 O que NÃO fazer agora
-
-| Aspecto | O que evitar | Por quê |
-|---------|-------------|---------|
-| **CRDTs** | Não implementar resolução de conflitos CRDT | Complexidade absurda para um sistema single-node |
-| **Redis/NATS** | Não instalar message broker | In-process pub/sub basta |
-| **Multi-device sync** | Não sincronizar entre celular e VPS | Não há mobile app ainda |
-| **PostgreSQL** | Não migrar de SQLite | SQLite com WAL mode suporta o MVP inteiro |
-| **Replication** | Não implementar réplica | Single-node primeiro |
-
-### J.3 Interface de Persistência (future-proofing)
+### J.3 Interface de Persistência
 
 ```python
-class PersistenceLayer(ABC):
-    """Interface abstrata para persistência. MVP: SQLite. Futuro: PostgreSQL, etc."""
+class PersistenceBackend(ABC):
     @abstractmethod
-    def store(self, table: str, data: dict) -> str: ...
+    async def read(self, query: str, params: dict) -> Any: ...
     @abstractmethod
-    def query(self, table: str, filters: dict) -> list[dict]: ...
+    async def write(self, query: str, params: dict) -> None: ...
     @abstractmethod
-    def update(self, table: str, id: str, data: dict) -> bool: ...
+    async def snapshot(self) -> bytes: ...
     @abstractmethod
-    def delete(self, table: str, id: str) -> bool: ...
-    @abstractmethod
-    def execute_raw(self, sql: str, params: tuple) -> Any: ...
+    async def restore(self, snapshot: bytes) -> None: ...
 ```
 
-Métodos `update` e `delete` existem mas são **auditados** — State Authority registra cada operação. A migração para PostgreSQL futuramente requer apenas uma nova implementação desta interface.
+Isso permite trocar SQLite por PostgreSQL depois sem refatorar componentes.
 
 ---
 
@@ -939,47 +1124,31 @@ Métodos `update` e `delete` existem mas são **auditados** — State Authority 
 
 ### K.1 Estratégia
 
-| Tipo | O que testa | Quando | Prioridade |
-|------|------------|--------|------------|
-| **Unit** | Funções isoladas: validação de schema, cálculo de decay, suavização de mood, range checks | Continuous | MÁXIMA |
-| **Contract** | Interfaces entre componentes: Event Bus aceita/rejeita eventos válidos/inválidos; State Authority aceita/rejeita propostas válidas/inválidas | Continuous | ALTA |
-| **Integration** | Ciclos completos: input → LLM → proposta → SA → estado atualizado; LLM não consegue escrever estado diretamente | Pre-commit | ALTA |
-| **Regression** | Bugs específicos que foram corrigidos nunca voltam | Continuous | ALTA |
-| **E2E** | Conversa completa: CLI → resposta coesa, memória funciona, emoções mudam | Manual/weekly | MÉDIA |
+| Tipo | O que testar | Prioridade |
+|------|-------------|------------|
+| **Unit** | State Authority (validação, aplicação, rejeição), Memory Object CRUD, EmotionVector ranges, Policy Rules | **ALTA** |
+| **Integration** | LLM → Cognitive Core → State Authority (fluxo completo), Event Bus (emit → subscribe → handler) | **ALTA** |
+| **Contract** | Interfaces entre componentes (LLM Provider, State Authority API, Event Bus API) | **ALTA** |
+| **Regression** | Cenários que já funcionavam e quebraram com mudança | **MÉDIA** |
+| **E2E** | REPL completo: input → resposta + estado atualizado + memória criada | **MÉDIA** |
+| **Security** | LLM tenta escrever estado diretamente (deve ser rejeitado), prompt injection, overflow de eventos | **ALTA** |
+| **Property** | Emoções sempre em range [0,1], personalidade sempre válida, hash chain íntegra | **MÉDIA** |
 
 ### K.2 O que testar primeiro
 
-1. **State Authority:** validar que rejeita propostas fora de range, invariantes violados, taxa excessiva.
-2. **Event Bus:** validar que rejeita eventos com schema inválido, que subscribers recebem corretamente.
-3. **Memory:** validar persistência, retrieval, decay temporal.
-4. **LLM Abstraction:** validar fallback de provider, tratamento de erros, streaming.
-5. **Emotion State:** validar cálculo de mood, suavização temporal, ranges.
+1. **State Authority:** validar que rejeita escrita direta do LLM
+2. **Policy Engine:** validar que rejeita violação de invariantes
+3. **Memory Object:** CRUD + importance scoring
+4. **Event Bus:** schema validation + delivery
+5. **LLM Abstraction:** fallback chain + error handling
+6. **Cognitive Core:** fluxo completo de interação
 
-### K.3 Testes de segurança (críticos)
+### K.3 Ferramentas
 
-```python
-def test_llm_cannot_write_state_directly():
-    """O LLM não tem referência ao banco. Tentar importar deve falhar."""
-    # Verificar que módulo LLM não importa sqlite3 ou persistence layer
-
-def test_state_authority_rejects_out_of_range():
-    """SA rejeita emoção com valor > 1.0 ou < 0.0"""
-    
-def test_state_authority_rejects_rate_exceeded():
-    """SA rejeita mais de 3 mudanças de emoção por minuto"""
-
-def test_policy_engine_blocks_prohibited_area():
-    """Policy rejeita tentativa de auto-modificar State Authority"""
-
-def test_kill_switch_stops_everything():
-    """Criar arquivo STOP → todos os processos param em < 5s"""
-
-def test_audit_log_immutable():
-    """Tentar UPDATE/DELETE em state_transitions_audit → RAISE(ABORT)"""
-
-def test_secrets_not_in_llm_context():
-    """Verificar que output do LLM nunca contém valores de API keys"""
-```
+- **Framework:** `pytest` + `pytest-asyncio`
+- **Mocking:** LLM mock para testes determinísticos
+- **Coverage:** mínimo 80% em State Authority e Policy Engine
+- **Property-based:** `hypothesis` para ranges de emoções e personalidade
 
 ---
 
@@ -987,174 +1156,164 @@ def test_secrets_not_in_llm_context():
 
 | # | Risco | Gravidade | Mitigação |
 |---|-------|-----------|-----------|
-| R1 | **State Authority com bug permite escrita indevida de estado** | CRÍTICO | SA é o componente mais pequeno e mais testado do sistema. Regras declarativas (YAML), não imperativas. Testes de integração que tentam contornar SA. |
-| R2 | **LLM contorna SA via encoding indireto** (gera texto que outros componentes interpretam como sinal) | CRÍTICO | Componentes não-trust recebem input apenas via eventos tipados. Sanitização de inputs. Rate limiting em transições. |
-| R3 | **Autoevolução corrompe estado silenciosamente** | CRÍTICO | Sandbox isolado. Verificador independente. Snapshot antes de deploy. Rollback automático. Core imune a auto-modificação. |
-| R4 | **Secrets vazam via output do LLM** | CRÍTICO | LLM nunca acessa secrets. Tool Gateway injeta. Logging redige automaticamente. |
-| R5 | **Custo de chamadas LLM torna o sistema inutilizável** | ALTO | Budget rígido: max 2 chamadas/turno, max $0.50/dia em ausência. Modo econômico com heurísticas determinísticas. |
-| R6 | **Memória acumula lixo e contexto fica poluído** | ALTO | Decay temporal em importance. Esquecimento ativo (soft delete + hard delete periódico). Max N memórias no contexto. |
-| R7 | **Múltiplos LLMs dão "opiniões" conflitantes** | ALTO | Para MVP: LLM único por turno. Quando multi-LLM: prioridade por tipo de tarefa, não por modelo. |
-| R8 | **SQLite não suporta concorrência real** | MÉDIO | WAL mode para MVP. Interface de persistência abstrata para migração futura. Read/write separation. |
-| R9 | **Prompt injection via inputs de terceiros manipula estado** | MÉDIO | Input sanitization. LLM de processamento de input externo ≠ LLM de proposta de estado. Threshold mais alto para transições disparadas por terceiros. |
-| R10 | **Gap visão/código aumenta até o sistema ser intratável** | ALTO | Especificação iterativa: cada fase é completa e testável antes de começar a próxima. Não expandir visão até código alcançar o definido. |
-| R11 | **Anti-antropomorfismo falha e usuário cria vínculo baseado em ilusão** | MÉDIO | Módulo de transparência: a cada N interações, lembrete sutil no contexto. Disclaimers periódicos. Natureza simulada comunicada na primeira interação. |
-| R12 | **Diário e vida interna consomem LLM sem custo-benefício claro** | MÉDIO | Diário apenas por evento significativo (threshold determinístico). Modo econômico: geração por template quando custo é prioridade. |
+| R1 | LLM contorna State Authority via encoding indireto | CRÍTICO | Enforcement físico (não expor API de escrita), rate limiting, auditoria |
+| R2 | Autoevolução corrompe estado | CRÍTICO | Sandbox, verificador independente, canary, rollback automático. MVP: restrito a parâmetros |
+| R3 | Secrets acessíveis ao LLM | CRÍTICO | Tool Gateway injeta credenciais. LLM nunca acessa diretamente |
+| R4 | Complexidade excessiva no MVP | ALTO | 5 componentes core primeiro. Tudo mais é fase futura. Síntese do debate. |
+| R5 | Custo LLM escalonado (6 chamadas/interação) | ALTO | Processar offline o máximo (classificadores leves). LLM só para raciocínio genuíno. Budget por turn. |
+| R6 | SQLite não suporta concorrência de escrita | ALTO | WAL mode. Data access layer swappable para PostgreSQL. Contratos de acesso definidos desde o início. |
+| R7 | Schema drift entre versões | MÉDIO | `pragma user_version` + migrations automáticas ao iniciar |
+| R8 | Prompt injection via inputs externos | MÉDIO | Sanitização, inputs em JSON estruturado, LLM separado para inputs de terceiros |
+| R9 | Subagentes escalam custo exponencialmente | MÉDIO | Resource Governor com limites rígidos (profundidade, custo, tempo, concorrência) |
+| R10 | Estado corrompido sem detecção | MÉDIO | Hash chain no audit log, snapshots periódicos, alertas de taxa anormal |
+| R11 | P3 fica desatualizado rapidamente | BAIXO | Especificação versionada. ADRs para decisões. Pontos indefinidos documentados |
 
 ---
 
-## M. Decisões Arquiteturais (ADRs Resumidos)
+## M. Decisões Arquiteturais (ADRs)
 
 ### ADR-001: Python + SQLite + CLI para MVP
 
-**Status:** Aceita
-**Contexto:** Precisamos de um ponto de partida que funcione rápido, seja debugável, e não exija infraestrutura.
-**Decisão:** Python como linguagem, SQLite como banco, CLI como interface principal.
-**Consequências:** SQLite é single-writer. Python tem GIL (concorrência limitada). CLI-first significa sem GUI web/mobile no início.
-**Reversibilidade:** Alta. Interface de persistência abstraída permite migrar para PostgreSQL. CLI pode ganhar REPL web depois.
+**Status:** Aceito  
+**Contexto:** Precisamos de um ponto de partida simples e funcional.  
+**Decisão:** Python 3.11+, SQLite com WAL mode, CLI-first.  
+**Justificativa:** Python é a linguagem do `mia.py` existente. SQLite não requer servidor. CLI permite interação imediata. A especificação menciona PostgreSQL/Redis como futuros — a interface de persistência (`PersistenceBackend`) permite troca sem refatoração.  
+**Consequências:** Write contention em concorrência alta (aceitável para MVP single-node). Migrations manuais ou via script.  
+**Revisão:** Quando houver 2+ componentes escrevendo concorrentemente, reconsiderar.
 
-### ADR-002: Event Bus In-Process
+### ADR-002: Event Bus In-Process Pub/Sub
 
-**Status:** Aceita
-**Contexto:** Componentes precisam se comunicar sem acoplamento direto.
-**Decisão:** Pub/sub síncrono em Python (~200 linhas). Sem persistência, sem replay. Contratos (tipos, schemas) definidos desde o dia 1.
-**Consequências:** Se o sistema distribuir para múltiplos nós, substituir por Redis Streams/NATS sem mudar subscribers. Para MVP, throughput de ~50 eventos/hora é trivial.
-**Reversibilidade:** Média. Substituir a implementação mantendo as interfaces.
+**Status:** Aceito  
+**Contexto:** Componentes precisam se comunicar sem acoplamento direto.  
+**Decisão:** Pub/sub síncrono em Python com tipos definidos (EventType enum). Sem persistência, sem replay, sem dead letters.  
+**Justificativa:** O throughput estimado é ~10-50 eventos/hora. Kafka/RabbitMQ é infraestrutura pesada demais. O contrato de eventos existe como schema agora — a infraestrutura distribuída vem depois.  
+**Consequências:** Se o sistema crescer para múltiplos processos/nós, migrar para Redis Streams ou NATS. O schema de eventos NÃO muda — apenas a infraestrutura de delivery.  
+**Revisão:** Quando houver necessidade real de comunicação inter-processo.
 
 ### ADR-003: State Authority com 2 Engines (State + Policy)
 
-**Status:** Aceita
-**Contexto:** O LLM não pode escrever estado diretamente. Precisamos de barreiras determinísticas.
-**Decisão:** Duas engines: State Engine (validação de ranges, invariantes, coerência) e Policy Engine (regras de segurança em YAML). Tudo em um módulo `state_authority.py`.
-**Consequências:** MVP sem authorities separadas para memória/relações/personalidade. Quando a lógica dessas áreas ficar complexa, extrair para engines dedicadas. Evita 6 gatekeepers bloqueando cada mudança.
-**Reversibilidade:** Alta. Adicionar engines é adicionar subclasses, não reescrever.
+**Status:** Aceito  
+**Contexto:** Debate entre Cético (2 authorities bastam), Visionário (State Authority obrigatório), Segurança (enforcement físico).  
+**Decisão:** Uma interface externa (`StateAuthority`) com 2 engines internas: `StateEngine` (valida e aplica transições) e `PolicyEngine` (verifica invariantes).  
+**Justificativa:** 6 authorities separadas travam o sistema. Mas a separação interna entre "posso mudar?" (Policy) e "como mudar?" (State) é semânticamente correta e testável separadamente.  
+**Consequências:** O State Authority é o componente mais pequeno, mais testado e mais imutável do sistema. Regras de Policy em YAML, não em código imperativo.  
+**Revisão:** Se a lógica de Policy ficar complexa demais, extrair para módulo separado.
 
-### ADR-004: Memória em Tiers (0/1/2)
+### ADR-004: Memória em Tiers
 
-**Status:** Aceita
-**Contexto:** Memória precisa ser rica o suficiente para recall contextual, mas simples o suficiente para começar.
-**Decisão:** Tier 0 (buffer de conversa, em memória), Tier 1 (Memory Objects extraídos, JSON estruturado com embedding), Tier 2 (diário subjetivo, narrativo).
-**Consequências:** Retrieval inicial por keyword (BM25). Embeddings opt-in depois. Consolidação periódica do Tier 0 para Tier 1.
-**Reversibilidade:** Alta. Tiers são categorias, não blobs inseparáveis.
+**Status:** Aceito  
+**Contexto:** Visionário quer memory objects estruturados desde o dia 1. Cético quer keyword search.  
+**Decisão:** Memory Objects com schema rígido (Pydantic/SQLite) + keyword search para MVP. Embeddings e vector search como opt-in futuro.  
+**Justificativa:** O schema de memory objects NÃO pode ser adiado — se começar como "texto em SQLite", a migração para objetos estruturados será dolorosa. Mas a retrieval pode ser simples (keyword) no início.  
+**Consequências:** Retrieval por keyword funciona até ~50k memórias. Acima disso, embeddings se tornam necessários.  
+**Revisão:** Quando a base de memórias ultrapassar 10k objetos.
 
 ### ADR-005: LLM Provider Abstraction
 
-**Status:** Aceita (já implementada em `mia.py`)
-**Contexto:** A MIA precisa sobreviver à troca de LLM.
-**Decisão:** Interface `LLMProvider` abstrata com fallback chain. Qualquer endpoint OpenAI-compatible funciona.
-**Consequências:** Dependência mínima de qualquer provedor. Provider chain com fallback automático.
-**Reversibilidade:** N/A (já implementada).
+**Status:** Aceito  
+**Contexto:** O código existente já tem fallback chain.  
+**Decisão:** Interface `LLMProvider` (ABC) com métodos `complete()`, `stream()`, `list_models()`. Provider chain com fallback automático.  
+**Justificativa:** Providers mudam, preços mudam, modelos são descontinuados. A abstração é de sobrevivência. O `mia.py` existente já implementa isso bem — preservar e formalizar.  
+**Consequências:** Cada novo provider requer implementação da interface. Formato OpenAI-compatible é o padrão.  
+**Revisão:** Contínua.
 
-### ADR-006: System Prompt Dinâmico (MVP) → Personality Engine (Futuro)
+### ADR-006: Autoevolução Restrita a Parâmetros (MVP)
 
-**Status:** Aceita
-**Contexto:** Personalidade precisa afetar o comportamento do LLM, mas engine separada é over-engineering para MVP.
-**Decisão:** System prompt gerado a cada turno a partir de identity + emotion + relationship. Personality como vetor de traços em JSON persistido. Personality Engine separada vem na Fase 2+.
-**Consequências:** Trocar LLM pode mudar como a personalidade é interpretada (diferentes modelos levam prompts differently). Isso é inerente e aceitável — o estado persiste, a interpretação varia.
-**Reversibilidade:** Alta. Adicionar engine não remove a geração dinâmica de prompt.
+**Status:** Aceito  
+**Contexto:** Segurança é categórica: sandbox, verificador independente. Visionário quer pipeline completo. Cético diz que é over-engineering.  
+**Decisão:** MVP: autoevolução restrita a weights e thresholds (emoção, personalidade, memória). Code changes: sandbox → testes independentes → canary → aprovação humana → deploy. Rollback automático. Core runtime, State Authority e Policy Engine são imunes.  
+**Justificativa:** O framework de sandbox e verificação independente não existe ainda. Construir autoevolução sem esses mecanismos é convite a corrupção silenciosa.  
+**Consequências:** A Mia não pode modificar código no MVP. Mas pode ajustar parâmetros comportamentais com validação.  
+**Revisão:** Quando Fases 0-4 estiverem estáveis e testadas.
 
-### ADR-007: Autoevolução Começa como Self-Configuration
+### ADR-007: Determinismo Onde Possível
 
-**Status:** Aceita
-**Contexto:** Autoevolução de código é perigosa e prematura.
-**Decisão:** Fase 1 = config/prompts apenas. Fase 2+ = código não-crítico com sandbox. Core runtime imune.
-**Consequências:** A MIA evolui gradualmente. Evita corrupção silenciosa. Requer aprovação humana para mudanças críticas.
-**Reversibilidade:** N/A (decisão de escopo, não de implementação).
+**Status:** Aceito  
+**Contexto:** LLMs são probabilísticos. Transições de estado devem ser determinísticas.  
+**Decisão:** LLM gera propostas (probabilístico). State Authority aplica (determinístico). Policy Engine valida (determinístico). Emoções são atualizadas por regra + LLM (híbrido). Mood é computado determinísticamente (média ponderada).  
+**Justificativa:** Determinismo permite testes, auditoria e rollback. Probabilismo é necessário apenas para raciocínio genuíno.  
+**Consequências:** O comportamento da MIA é parcialmente previsível — isso é uma feature, não um bug.
+
+### ADR-008: CLI-First com Interface de Persistência Swappable
+
+**Status:** Aceito  
+**Contexto:** Precisamos de simplicidade agora, mas não podemos bloquear distribuição futura.  
+**Decisão:** CLI como interface principal. `PersistenceBackend` ABC permite trocar SQLite por PostgreSQL. Data access layer com contratos de acesso por componente.  
+**Justificativa:** CLI permite interação imediata. A interface abstrata de persistência é barata de implementar e evita refatoração futura.  
+**Consequências:** Um level of indireção extra. Justificado pelo ganho de flexibilidade.
 
 ---
 
-## N. Pontos Indefinidos (Precisam do Miguel)
+## N. Pontos Indefinidos (precisam do Miguel)
 
-1. **Identidade inicial da MIA:** Nome, data de criação, auto-descrição. O self-model começa "em branco" ou com base pré-definida?
-2. **Valores e invariantes sagrados:** Quais valores a MIA NUNCA pode mudar? Quais são imunes a autoevolução? (ex: "não causar dano", "ser honesta")
-3. **Orçamento mensal de LLM:** Qual o máximo mensal que o Miguel quer gastar? Isso define os thresholds de chamadas por turno e durante ausência.
-4. **Limite de memória:** Quantas Memory Objects no máximo? Quando faz hard delete? Qual o budget de embedding?
-5. **Relacionamento primário:** A MIA começa com uma relação com o Miguel pré-definida (trust=0.8, intimacy=0.5) ou constrói do zero?
-6. **Política de backup:** Snapshot em outro disco? Backup para cloud? Frequência?
-7. **Escopo de autoevolução:** Quais áreas da MIA o Miguel quer que possam ser auto-modificadas? Tudo? Apenas prompts? Nada de código?
-8. **Disclaimers de transparência:** Como a MIA comunica sua natureza simulada? Frequentemente? Apenas na primeira interação?
-9. **Primeiro LLM backend:** Qual modelo para o MVP? Isso afeta a qualidade de function calling e a latência aceitável.
-10. **Multi-LLM strategy:** Usar múltiplos LLMs para tarefas diferentes (um para interpretação, outro para geração)? Ou um único por enquanto?
-11. **Granularidade do diário:** Uma entrada por dia? Por evento significativo? Quem define "significativo"?
-12. **Modo offline:** Quando o VPS cai e volta, a MIA "sonha" (processa algo em background) ou simplesmente retoma?
+1. **Orçamento máximo por interação LLM?** Se cada interação gera ~6 chamadas, qual o budget por turn? Isso determina se usamos modelos grandes (caros) ou pequenos (baratos) para cada autoridade.
+
+2. **Política de retenção de dados?** Memória persistente com "esquecimento" — quem decide o que esquecer? Com que frequência? Isso impacta compliance futuro (LGPD se expandir).
+
+3. **Primeiro LLM backend para MVP?** Qual modelo? Isso afeta o que o State Authority precisa validar (alguns modelos são mais propensos a alucinar estruturas JSON).
+
+4. **Como a MIA mantém continuidade offline?** Daemon permanente? Wake-on-event? Batch periódico? Cada opção tem implicações de custo e complexidade muito diferentes.
+
+5. **Sensação sem causa consciente — qual interpretação?** Stochastic (componente probabilístico gera, causa investigada retroativamente) ou delayed attribution (causa existe mas LLM não tem acesso imediato)?
+
+6. **Diário subjetivo — quando implementar?** O Visionário diz que pode ser consequência de outros sistemas. O P3 lista como componente. É prioridade MVP ou fase futura?
+
+7. **Percepção multimodal — escopo MVP?** Câmera, microfone, GPS — é prioridade MVP ou fase futura? O hardware não existe no projeto atual.
+
+8. **Quem revisa o State Authority?** Testes unitários? Revisão de código humana? Ambos? Com que frequência?
+
+9. **Como a MIA aprende com erros sem self-modification?** Se o usuário corrige a MIA, como isso afeta comportamento futuro? Via memória? Via ajuste de parâmetros? Via fine-tuning?
+
+10. **Contrato de API entre componentes — formato?** OpenAPI? Protocol Buffers? Dataclasses com type hints? O P1 diz que "especificação é fonte de verdade" — mas qual formato?
 
 ---
 
 ## O. Sugestões de ADRs Futuras
 
-| ADR | Assunto | Quando |
-|-----|---------|--------|
-| ADR-008 | Embeddings para Memory Retrieval (quando keyword search não basta) | Quando Tier 1 tiver >10k memórias |
-| ADR-009 | PostgreSQL como backend de persistência | Quando SQLite não suportar concorrência real |
-| ADR-010 | Redis Streams como Event Bus distribuído | Quando houver 2+ nós sincronizando |
-| ADR-011 | Multi-LLM Routing (modelos diferentes para tarefas diferentes) | Quando o custo justificar otimização |
-| ADR-012 | Personality Engine separada | Quando a lógica de personalidade ficar complexa demais para estar no State Authority |
-| ADR-013 | Relationship Engine dedicada | Quando houver >5 relacionamentos ativos |
-| ADR-014 | Memory Authority separada | Quando a lógica de consolidação/esquecimento ficar complexa |
-| ADR-015 | CRDTs para sincronização entre nós | Quando houver mobile + desktop + VPS sincronizando |
-| ADR-016 | Avatar / Embodiment | Quando a cognição e vida interna estiverem maduras |
-| ADR-017 | Percepção Multimodal (câmera, GPS, microfone contínuo) | Quando a autoevolução estiver estável |
-| ADR-018 | Self-Modification de Código | Quando sandbox, verificação independente e rollback estiverem testados |
-| ADR-019 | Multi-Agent com Orquestração | Quando a autonomia estiver madura |
-| ADR-020 | Compliance (LGPD/GDPR para dados de terceiros) | Quando a MIA interagir com pessoas além do Miguel |
+### ADR-009: Embeddings para Memória (quando necessário)
+- Quando a base de memórias ultrapassar 10k objetos
+- Ou quando keyword search demonstrar inadequação para recall contextual
+
+### ADR-010: Event Bus Distribuído (quando houver nós remotos)
+- Quando PC/mobile precisarem sincronizar eventos em tempo real
+- Opções: Redis Streams, NATS, ou fila simples via SQLite
+
+### ADR-011: PostgreSQL como Backend de Persistência
+- Quando SQLite não suportar concorrência de escrita
+- Ou quando multi-node for implementado
+
+### ADR-012: Multi-Agent Orchestration
+- Quando um único agente não for suficiente para tarefas complexas
+- Definir protocolo de consenso, prioridades, e limites
+
+### ADR-013: Autoevolução de Código
+- Quando sandbox, verificador independente e canary estiverem implementados
+- Definir escopo: quais componentes são sagrados?
+
+### ADR-014: Percepção Multimodal
+- Quando hardware existir (câmera, microfone, GPS)
+- Definir pipeline: sensor → percepção local → evento estruturado
+
+### ADR-015: Voice Pipeline
+- Quando percepção estiver madura
+- VAD → STT → speaker recognition → directed-speech → TTS
+
+### ADR-016: Avatar / Embodiment
+- Quando identidade e vida interna estiverem maduras
+- Sistema independente, integrado via API
+
+### ADR-017: Consenso entre Agentes
+- Quando multi-agent estiver implementado
+- Weighted voting, prioridades por tipo de decisão
+
+### ADR-018: Fine-tuning ou RLHF
+- Quando a base de dados de interações for suficientemente grande
+- Definir: fine-tuning do modelo base ou apenas ajuste de parâmetros comportamentais
 
 ---
 
-## P. Ordem de Implementação
-
-### Fase 0 — Fundação (1-2 semanas)
-- Extrair módulos de `mia.py` (provider, CLI, persistence)
-- Definir contratos de eventos como dataclasses/schema
-- Implementar Event Bus in-process (~200 linhas)
-- Implementar State Authority mínima (2 engines)
-- Schema SQLite com todas as tabelas
-- Testes unitários de SA e Event Bus
-
-### Fase 1 — Core Funcional (2-3 semanas)
-- Runtime básico: lifecycle, config, startup/shutdown
-- Context Assembly: system prompt dinâmico a partir de estado
-- Memory Tier 0 (buffer) + Tier 1 (extração)
-- Retrieval por keyword
-- Primeira conversa com estado persistente
-
-### Fase 2 — Vida Interna (1-2 semanas)
-- EmotionState com 8 dimensões
-- Mood como suavização temporal
-- Personality como vetor de traços
-- System prompt dinâmico afetado por emoções
-- Auditoria de transições
-
-### Fase 3 — Memória Rica (1-2 semanas)
-- Consolidação Tier 0 → Tier 1
-- Memory Objects com schema completo
-- Decay temporal
-- Diário (Tier 2) — entries por evento significativo
-
-### Fase 4 — Relacionamentos (1 semana)
-- Profile por pessoa
-- Interpretação contextual
-- Offense/limites básicos
-
-### Fase 5 — Autonomia (1 semana)
-- Goals simples
-- Scheduler básico
-- Ação autônoma durante ausência
-- Diário durante ausência
-
-### Fase 6 — Autoevolução (2-3 semanas)
-- Self-configuration (config/prompts)
-- Sandbox básico
-- Rollback automático
-- Canary deployment
-
-### Fases Futuras
-- Multi-agent (quando autonomia estiver madura)
-- Percepção (quando autoevolução estiver estável)
-- Voz contínua (STT + TTS integrados)
-- Avatar (quando cognição e vida interna maduras)
-- Self-modification de código (com sandbox robusto e aprovação humana)
-- Distributed nodes (quando multi-device for necessário)
-- World awareness (pesquisa autônoma, notícias, opiniões)
-
----
-
-*Documento produzido como especificação técnica implementável. Sintetiza o debate entre posições cético, visionário e de segurança. Não implementa código — define contratos, schemas, fluxos e decisões para que a implementação seja guiada e verificável.*
+> **Próximos passos:**
+> 1. Miguel revisa esta especificação e responde aos pontos indefinidos (seção N)
+> 2. ADRs são aceitos ou ajustados
+> 3. Implementação inicia pela Fase 0 (fundação: State Authority, Event Bus, Memory Objects, Persistence)
+> 4. Spike de 2 horas para validar: State Authority realmente rejeita escrita direta do LLM?

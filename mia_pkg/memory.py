@@ -116,20 +116,20 @@ class MemoryStore:
         """Atualiza a importância de uma memória (exceto scope: private)."""
         if not (0.0 <= importance <= 1.0):
             return False
-        self._db.execute(
+        cur = self._db.execute(
             "UPDATE memory_objects SET importance = ?, updated_at = ? WHERE id = ?",
             (importance, datetime.now(timezone.utc).isoformat(), memory_id),
         )
         self._db.commit()
-        return self._db.connection.total_changes > 0
+        return cur.rowcount > 0
 
     def delete(self, memory_id: str) -> bool:
         """Remove uma memória (soft delete via versão)."""
-        self._db.execute(
+        cur = self._db.execute(
             "DELETE FROM memory_objects WHERE id = ?", (memory_id,)
         )
         self._db.commit()
-        return self._db.connection.total_changes > 0
+        return cur.rowcount > 0
 
     def list_by_importance(self, limit: int = 10) -> list[MemoryObject]:
         """Lista memórias ordenadas por importância (desc)."""

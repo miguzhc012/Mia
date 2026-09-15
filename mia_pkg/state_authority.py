@@ -90,7 +90,42 @@ class StateAuthority:
         self._db = db
         self._policy = policy_engine
         self._event_bus = event_bus
-        self._last_audit_hash: str = "0" * 64  # hash do último registro
+        # Recupera o último hash da chain do banco (persistente entre processos)
+        self._last_audit_hash: str = self._load_last_hash()
+
+    def _load_last_hash(self) -> str:
+        """Carrega o hash da última transição auditada (ou hash vazio se nenhuma)."""
+        row = self._db.fetchone(
+            "SELECT hash FROM state_transitions_audit ORDER BY rowid DESC LIMIT 1"
+        )
+        if row and row.get("hash"):
+            return row["hash"]
+        return "0" * 64
+
+    def verify_chain(self) -> tuple[bool, int, list[str]]:
+        """Verifica a integridade da hash chain do audit log.
+
+        Returns:
+            (ok, quantos_registros, lista_de_erros)
+        """
+        rows = self._db.fetchall(
+            "SELECT id, target, key, before_snapshot, after_snapshot, "
+            "hash, hash_prev FROM state_transitions_audit ORDER BY rowid ASC"
+        )
+        prev = "0" * 64
+        errors: list[str] = []
+        for i, row in enumerate(rows):
+            payload = (
+                f"{row['id']}:{row['target']}:{row['key']}:"
+                f"{row['before_snapshot']}:{row['after_snapshot']}:{row['hash_prev']}"
+            )
+            calc = hashlib.sha256(payload.encode()).hexdigest()
+            if row["hash_prev"] != prev:
+                errors.append(f"Registro {i}: hash_prev não bate com o registro anterior")
+            if row["hash"] != calc:
+                errors.append(f"Registro {i}: hash corrente não confere com o payload")
+            prev = row["hash"]
+        return (len(errors) == 0, len(rows), errors)
 
     # ------------------------------------------------------------------
     # API pública
@@ -171,9 +206,48 @@ class StateAuthority:
     # Internos
     # ------------------------------------------------------------------
 
+    # Colunas permitidas por target (whitelist — NUNCA interpolar chave sem passar aqui)
+    _TARGET_COLUMNS: dict[str, set[str]] = {
+        "emotion": {"happiness", "sadness", "anger", "fear", "anxiety", "enthusiasm",
+                    "affection", "attachment", "curiosity", "jealousy", "passion", "interest"},
+        "personality": {"openness", "conscientiousness", "extraversion", "agreeableness",
+                        "neuroticism", "patience", "sociability", "humor", "spontaneity",
+                        "warmth", "sassiness"},
+        "identity": {"name", "self_model", "core_values", "beliefs", "narrative_identity"},
+        "relationship": {"familiarity", "trust", "respect", "affection", "attachment",
+                         "admiration", "attraction", "intimacy", "comfort", "tension",
+                         "insecurity", "safety", "expectation"},
+        "person": {"name", "role", "notes", "status"},
+        "goal": {"title", "description", "status", "priority", "progress"},
+        "diary": {"content", "mood", "reflection"},
+    }
+
+    _RANGE_FIELDS: dict[str, tuple[float, float]] = {
+        "happiness": (-1.0, 1.0),
+        "sadness": (0.0, 1.0),
+        "anger": (0.0, 1.0),
+        "fear": (0.0, 1.0),
+        "anxiety": (0.0, 1.0),
+        "enthusiasm": (0.0, 1.0),
+        "affection": (-1.0, 1.0),
+        "attachment": (0.0, 1.0),
+        "curiosity": (0.0, 1.0),
+        "jealousy": (0.0, 1.0),
+        "passion": (0.0, 1.0),
+        "interest": (0.0, 1.0),
+    }
+
     def _validate(self, proposal: StateTransitionProposal) -> ValidationResult:
-        """State Engine interno: valida ranges e schema."""
+        """State Engine interno: valida ranges, schema e whitelist de colunas."""
         errors: list[str] = []
+
+        # WHITELIST de colunas por target — bloqueia SQL injection e keys arbitrárias
+        allowed = self._TARGET_COLUMNS.get(proposal.target, set())
+        if proposal.target not in ("memory",) and proposal.key not in allowed:
+            errors.append(
+                f"Chave '{proposal.key}' não é permitida para target '{proposal.target}'."
+            )
+            return ValidationResult(valid=False, errors=errors)
 
         if proposal.key in self._RANGE_FIELDS:
             low, high = self._RANGE_FIELDS[proposal.key]
@@ -187,46 +261,71 @@ class StateAuthority:
         return ValidationResult(valid=len(errors) == 0, errors=errors)
 
     def _apply_transition(self, proposal: StateTransitionProposal, before: dict[str, Any]) -> None:
-        """Aplica a transição de forma determinística."""
-        # Para emotion_state: atualiza o campo direto
-        if proposal.target == "emotion":
-            now = datetime.now(timezone.utc).isoformat()
-            if before:
-                self._db.execute(
-                    f"UPDATE emotion_state SET {proposal.key} = ?, snapshot_at = ? WHERE id = ?",
-                    (proposal.delta, now, before["id"]),
-                )
-            else:
-                row_id = str(uuid.uuid4())
-                self._db.execute(
-                    f"INSERT INTO emotion_state (id, {proposal.key}, snapshot_at) VALUES (?, ?, ?)",
-                    (row_id, proposal.delta, now),
-                )
+        """Aplica a transição de forma determinística.
 
-        elif proposal.target == "personality":
-            now = datetime.now(timezone.utc).isoformat()
-            if before:
-                self._db.execute(
-                    f"UPDATE personality_state SET {proposal.key} = ?, snapshot_at = ? WHERE id = ?",
-                    (proposal.delta, now, before["id"]),
-                )
-            else:
-                row_id = str(uuid.uuid4())
-                self._db.execute(
-                    f"INSERT INTO personality_state (id, {proposal.key}, snapshot_at) VALUES (?, ?, ?)",
-                    (row_id, proposal.delta, now),
-                )
+        NOTA: proposal.key SÓ é interpolado após passar pela whitelist
+        _TARGET_COLUMNS em _validate(). Para targets sem whitelist
+        (memory), key é tratado como dado simples.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        target_table = {
+            "emotion": "emotion_state",
+            "personality": "personality_state",
+            "identity": "identity_state",
+            "relationship": "relationships",
+            "person": "people",
+            "goal": "goals",
+            "diary": "diary",
+        }.get(proposal.target)
 
-        elif proposal.target == "memory":
-            # Para memória: create/update
+        # Memória: create/update (key = tipo da memória, delta = conteúdo)
+        if proposal.target == "memory":
             if proposal.action == "create":
                 row_id = str(uuid.uuid4())
-                now = datetime.now(timezone.utc).isoformat()
                 self._db.execute(
                     "INSERT INTO memory_objects (id, content, type, source, created_at, updated_at, importance) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (row_id, str(proposal.delta), proposal.key, proposal.source, now, now, proposal.confidence),
                 )
+            elif before:
+                self._db.execute(
+                    "UPDATE memory_objects SET content = ?, updated_at = ?, importance = ? WHERE id = ?",
+                    (str(proposal.delta), now, proposal.confidence, before.get("id")),
+                )
+            self._db.commit()
+            return
+
+        # Demais targets: key validado por whitelist em _validate()
+        if target_table is None or proposal.key not in self._TARGET_COLUMNS.get(proposal.target, set()):
+            self._db.commit()  # transição registrada no audit, sem efeito colateral
+            return
+
+        if proposal.action in ("create", "add"):
+            row_id = str(uuid.uuid4())
+            # relações/pessoas/goals precisam de chave estrangeira (pessoa)
+            if proposal.target == "relationship":
+                self._db.execute(
+                    f"INSERT INTO {target_table} (id, {proposal.key}, person_id, snapshot_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (row_id, proposal.delta, proposal.ref_id or "", now, now),
+                )
+            elif proposal.target in ("person", "goal"):
+                self._db.execute(
+                    f"INSERT INTO {target_table} (id, {proposal.key}, snapshot_at, updated_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (row_id, proposal.delta, now, now),
+                )
+            else:
+                self._db.execute(
+                    f"INSERT INTO {target_table} (id, {proposal.key}, snapshot_at) VALUES (?, ?, ?)",
+                    (row_id, proposal.delta, now),
+                )
+        elif before:
+            # UPDATE no registro atual (snapshot mais recente)
+            self._db.execute(
+                f"UPDATE {target_table} SET {proposal.key} = ?, updated_at = ? WHERE id = ?",
+                (proposal.delta, now, before["id"]),
+            )
 
         self._db.commit()
 
@@ -263,8 +362,8 @@ class StateAuthority:
             "INSERT INTO state_transitions_audit "
             "(id, timestamp, component_origin, transition_type, target, key, "
             "before_snapshot, after_snapshot, evidence, confidence, "
-            "applied_by, proposal_id, hash_prev) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "applied_by, proposal_id, hash, hash_prev) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 transition_id,
                 now,
@@ -278,6 +377,7 @@ class StateAuthority:
                 proposal.confidence,
                 proposal.source,  # applied_by
                 transition_id,   # proposal_id
+                current_hash,    # hash
                 self._last_audit_hash,
             ),
         )
