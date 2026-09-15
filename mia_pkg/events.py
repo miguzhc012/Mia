@@ -28,6 +28,20 @@ class EventType(str, Enum):
     COMPLIMENT_RECEIVED = "compliment_received"
     NEW_PERSON_DETECTED = "new_person_detected"
     CAMERA_ACTIVITY_DETECTED = "camera_activity_detected"
+    # Voice (Fase 9)
+    SPEECH_DETECTED = "speech_detected"
+    SPEECH_TRANSCRIBED = "speech_transcribed"
+    SPEAKER_IDENTIFIED = "speaker_identified"
+    SPEECH_DIRECTED = "speech_directed"
+    SPEECH_IGNORED = "speech_ignored"
+    TTS_GENERATED = "tts_generated"
+    # Perception (Fase 10)
+    VISUAL_ANALYZED = "visual_analyzed"
+    PERCEPTION_FUSED = "perception_fused"
+    # Distributed (Fase 12)
+    NODE_ONLINE = "node_online"
+    NODE_OFFLINE = "node_offline"
+    SYNC_COMPLETED = "sync_completed"
     # Task
     TASK_FAILED = "task_failed"
     TASK_COMPLETED = "task_completed"
