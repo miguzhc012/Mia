@@ -18,19 +18,21 @@
         "Fase 13: Subagentes (registry, orchestrator)",
         "Fase 14: World Awareness (interesses, pesquisa)",
         "Fase 15: Autoevolucao (canary, rollback)",
-        "Fase 16: Integracao (monitoring, E2E, backup)"
+        "Fase 16: Integracao (monitoring, E2E, backup)",
+        "Fase 9: Voz (VAD, STT, TTS com prosodia)",
+        "Fase 10: Visao (pipeline, agregador, enricher)",
+        "Fase 11: Avatar (SVG, expression mapper, sync)",
+        "Fase 12: Nos (sync, offline, master wins)"
       ]
     },
     {
       "name": "Proximas",
       "color": "#ffd8a8",
       "items": [
-        "Fase 9: Voz (TTS/STT - edge/piper local)",
-        "Fase 10: Visao (percepcao de imagens)",
-        "Fase 11: Avatar (embodiment)",
-        "Fase 12: Nos distribuidos (mobile/desktop)",
-        "Persistencia de interesses em DB",
-        "Integracao LLM real (nao mock)"
+        "Integracao LLM real (nao mock)",
+        "Voz real: Whisper STT + edge-tts/piper",
+        "Visao real: LLaVA / modelo multimodal local",
+        "Deploy VPS como master (n8n ou serviço)"
       ]
     },
     {
@@ -40,7 +42,7 @@
         "Criacao de ferramentas pela propria Mia",
         "Mudancas de codigo auto-evolutivas",
         "Multi-usuario / identidades separadas",
-        "Deploy distribuido multi-no"
+        "Configuracao conectar clientes mobile"
       ]
     }
   ]

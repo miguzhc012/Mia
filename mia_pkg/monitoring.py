@@ -83,13 +83,13 @@ class HealthMonitor:
         """Status de cada componente (imports funcionam?)."""
         status: dict[str, str] = {}
         components = [
-            "affective_engine", "attention_policy", "autonomy",
+            "affective_engine", "attention_policy", "autonomy", "avatar",
             "belief_revision", "beliefs", "chat", "cli",
             "cognitive_core", "config", "consolidation",
-            "context_assembly", "db", "emotion_governor", "events",
+            "context_assembly", "db", "distributed", "emotion_governor", "events",
             "evolution", "identity", "identity_authority", "llm",
-            "memory", "needs_desires", "reflection", "security",
-            "social", "state_authority", "world", "agents",
+            "memory", "monitoring", "needs_desires", "perception", "reflection",
+            "security", "social", "state_authority", "voice", "world", "agents",
         ]
         import importlib
         for mod in components:

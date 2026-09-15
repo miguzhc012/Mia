@@ -59,10 +59,38 @@ class InterestTracker:
         self._db = db
         self._identity = IdentityManager(db)
         self._interests: dict[str, Interest] = {}
+        self._ensure_table()
         self._load()
 
+    def _ensure_table(self) -> None:
+        """Cria tabela de interesses se não existir (migração leve)."""
+        self._db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS interests (
+                name TEXT PRIMARY KEY,
+                weight REAL NOT NULL DEFAULT 0.3,
+                sources TEXT NOT NULL DEFAULT '',
+                last_seen REAL NOT NULL
+            )
+            """
+        )
+        self._db.commit()
+
     def _load(self) -> None:
-        """Carrega interesses persistidos (tags de memória com #interest)."""
+        """Carrega interesses persistidos (tabela interests + memórias #interest)."""
+        # 1. da tabela interests
+        try:
+            rows = self._db.fetchall("SELECT name, weight, sources, last_seen FROM interests")
+            for r in rows:
+                self._interests[r["name"]] = Interest(
+                    name=r["name"],
+                    weight=r["weight"],
+                    sources=[s for s in (r["sources"] or "").split(",") if s],
+                    last_seen=r["last_seen"],
+                )
+        except Exception:
+            pass
+        # 2. de memórias com #interest (legado)
         store = MemoryStore(self._db)
         memories = store.search_by_content("#interest")
         for m in memories[:50]:
@@ -74,6 +102,17 @@ class InterestTracker:
                     weight=0.5 + 0.1 * m.importance,
                     sources=["memory"],
                 )
+
+    def _persist(self) -> None:
+        """Persiste todos os interesses na tabela."""
+        now = time.time()
+        for name, interest in self._interests.items():
+            self._db.execute(
+                "INSERT OR REPLACE INTO interests (name, weight, sources, last_seen) "
+                "VALUES (?, ?, ?, ?)",
+                (name, interest.weight, ",".join(interest.sources), interest.last_seen),
+            )
+        self._db.commit()
 
     def observe_text(self, text: str, source: str = "chat") -> list[Interest]:
         """Observa novo texto; atualiza interesses por keywords frequentes."""
@@ -89,6 +128,8 @@ class InterestTracker:
                 continue
             self._bump(word, delta=0.05 * count, source=source)
             updated.append(self._interests[word])
+        if updated:
+            self._persist()
         return updated
 
     def _bump(self, name: str, delta: float, source: str) -> None:
@@ -117,24 +158,35 @@ class InterestTracker:
         rate=0.05: interesse de 30 dias perde ~100% (1 - 0.05*23).
         """
         now = time.time()
+        changed = False
         for name, interest in list(self._interests.items()):
             days = (now - interest.last_seen) / 86400.0
             if days > 7:
                 factor = max(0.0, 1.0 - rate * (days - 7))
                 interest.weight *= factor
+                changed = True
             if interest.weight <= 0.05:
                 del self._interests[name]
+                changed = True
+        if changed:
+            self._persist()
 
     def seed_from_personality(self) -> None:
         """Interesses iniciais baseados em personalidade (curiosity+openness)."""
         personality = self._identity.get_personality()
         traits = personality.traits
+        seeded = False
         if traits.curiosity > 0.6:
             self._bump("aprendizado", delta=traits.curiosity - 0.5, source="personality")
+            seeded = True
         if traits.openness > 0.6:
             self._bump("exploracao", delta=traits.openness - 0.5, source="personality")
+            seeded = True
         if traits.playfulness > 0.6:
             self._bump("jogos", delta=traits.playfulness - 0.5, source="personality")
+            seeded = True
+        if seeded:
+            self._persist()
 
 
 # ======================================================================

@@ -5,7 +5,7 @@ um sistema cognitivo completo: percebe eventos, interpreta com um modelo de
 si mesma (self-model), sente, lembra, se relaciona, reflete e evolui
 autonomamente.
 
-> **Status atual: 271 testes passando · 26 commits · 31 módulos · Fases 0–16 cobertas**
+> **Status atual: 357 testes passando · 31 commits · 35 módulos · Fases 0–16 cobertas**
 
 ---
 
@@ -135,10 +135,42 @@ de comandos, kill switch.
 - `mia_pkg/security.py` — Redactor, RateLimiter, Integrity, Sandbox
 - Commit: `7ab59e5`
 
-### Fase 9 — Voz · Fase 10 — Visão · Fase 11 — Avatar · Fase 12 — Nós
-Stubs prontos no roadmap (`docs/03_roadmap.md`); dependem de integrações
-externas (TTS, câmera, embodied agent, rede) — planejadas, não implementadas
-nesta rodada de fundação cognitiva.
+### Fase 9 — Voz
+Voice Pipeline: VAD detecta fala vs. silêncio (energia + janelas + merge),
+STT plugável (Whisper/mock), Speaker Recognition (PeopleStore ou profile_fn),
+Directed-speech (nome/imperativo/pergunta; conversa de terceiros ignorada),
+TTS com prosódia mapeada da emoção (rate/pitch/volume), eventos de áudio
+tipados no bus, integração com Cognitive Core (fala dirigida → MIGUEL_SPOKE).
+
+- `mia_pkg/voice.py` — VoicePipeline, VAD, STTEngine, SpeakerRecognizer, TTSEngine
+- Commit: Fase 9
+
+### Fase 10 — Visão / Percepção
+VisionPipeline (analyze_fn plugável → CAMERA_ACTIVITY_DETECTED,
+NEW_PERSON_DETECTED), VisionRateLimiter (budget visual), PerceptionAggregator
+(fusão visão+áudio → person_interacting, bidirecional), ContextEnricher
+(percepção → contexto do Cognitive Core), privacy (análise local plugável).
+
+- `mia_pkg/perception.py` — VisionPipeline, PerceptionAggregator, ContextEnricher
+- Commit: Fase 10
+
+### Fase 11 — Avatar / Embodiment
+ExpressionMapper (EmotionVector+MoodState → FacialConfig, thresholds por
+baseline), AvatarRenderer SVG cartoon puro (olhos, sobrancelhas, boca, blush),
+AvatarSync (reage a STATE_CHANGED via event bus), AvatarAPI
+(current_expression / current_svg / save_snapshot).
+
+- `mia_pkg/avatar.py` — ExpressionMapper, AvatarRenderer, AvatarSync, AvatarAPI
+- Commit: Fase 11
+
+### Fase 12 — Nós Distribuídos
+NodeManager (roles master/client, heartbeat, NODE_ONLINE/OFFLINE),
+SyncEngine (snapshot JSON + checksum MD5, apply substitui estado, fila de
+eventos offline com serialize/load), OfflineMode (snapshot em disco),
+ConflictResolver (master wins; clientes: mais recente).
+
+- `mia_pkg/distributed.py` — NodeManager, SyncEngine, OfflineMode, ConflictResolver
+- Commit: Fase 12
 
 ### Fase 13 — Subagentes / Orquestração
 AgentRegistry com capacidades e role, Orchestrator com delegação por

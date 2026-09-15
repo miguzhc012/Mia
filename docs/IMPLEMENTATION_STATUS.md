@@ -43,10 +43,10 @@
 | 6 — Autonomia | autonomy (goals, initiative, governor) | ✅ |
 | 7 — Reflexão | reflection, belief_revision, beliefs | ✅ |
 | 8 — Security | security (redactor, rate, integrity, sandbox) | ✅ |
-| 9 — Voz | (planejado — TTS/STT externo) | ⬜ |
-| 10 — Visão | (planejado — percepção) | ⬜ |
-| 11 — Avatar | (planejado — embodiment) | ⬜ |
-| 12 — Nós | (planejado — distribuído) | ⬜ |
+| 9 — Voz | voice (VAD, STT, speaker, directed, TTS) | ✅ |
+| 10 — Visão | perception (pipeline, aggregator, enricher) | ✅ |
+| 11 — Avatar | avatar (mapper, renderer SVG, sync, api) | ✅ |
+| 12 — Nós | distributed (manager, sync, offline, conflict) | ✅ |
 | 13 — Subagentes | agents (registry, orchestrator, templates) | ✅ |
 | 14 — World Awareness | world (interests, relevance, research) | ✅ |
 | 15 — Autoevolução | evolution (engine, canary, rollback) | ✅ |
@@ -54,16 +54,19 @@
 
 ### Testes (execução real verificada)
 ```
-271 passed in 1.89s
+357 passed in 2.71s
 ```
 Cobertura: EventBus (pub/sub, filtro, unsubscribe, circuit breaker), StateAuthority
 (transições, LLM bloqueado, SQL injection, hash chain), Memory (CRUD, importância,
 consolidação, decay), PolicyEngine, AffectiveEngine (PAD, fuzzy, humor, sensações),
 Identity (Big Five, evolução por interações), Beliefs, NeedsDesires, AttentionPolicy,
 Social (pessoas, relações, limites), Autonomy (goals, iniciativa, recursos),
-Reflection (diário, crenças), Security, Agents (registry, orchestrator, kill switch),
-World (interesses, pesquisa, knowledge), Evolution (canary, rollback),
-Monitoring (health, backup/restore), E2E (fluxos completos).
+Reflection (diário, crenças), Security, Voice (VAD, STT, speaker, directed, TTS,
+pipeline), Perception (visão, rate limit, fusão, enricher), Avatar (expression
+mapper, SVG, sync, API), Distributed (nodes, sync snapshot, offline, conflito),
+Agents (registry, orchestrator, kill switch), World (interesses persistidos em DB,
+pesquisa, knowledge), Evolution (canary, rollback), Monitoring (health, backup/
+restore), E2E (fluxos completos).
 
 ## 4. Revisão Independente
 
@@ -83,16 +86,15 @@ Veredito: **APROVADO COM RESSALVAS** (2 críticos, 3 altos encontrados)
 
 Conforme `docs/03_roadmap.md` e `docs/roadmap_mia.excalidraw`:
 
-Próximas (fases que dependem de integração externa):
-1. **Fase 9** — Voz: TTS/STT (edge-tts/piper local, sem nuvem paga)
-2. **Fase 10** — Visão: percepção de imagens (modelo multimodal)
-3. **Fase 11** — Avatar: embodiment virtual
-4. **Fase 12** — Nós distribuídos: mobile/desktop (n8n/hook)
+Próximas (integrações reais — hoje mocks/stubs nos testes):
+1. **LLM real** — conectar ChatSession a um provider de verdade (chave Groq/HF/OpenRouter)
+2. **Voz real** — Whisper STT + edge-tts/piper (grátis, local); VAD real (WebRTC)
+3. **Visão real** — LLaVA / modelo multimodal local para analyze_fn
+4. **Deploy distribuído** — VPS como master (n8n ou serviço), clientes PC/mobile sync
 
 Melhorias pós-MVP:
-- Persistência de interesses do InterestTracker em DB (hoje em memória)
-- Integração com LLM real (hoje mock/stub nos testes)
 - Autoevolução de código (hoje só parâmetros)
+- Multi-usuário / identidades separadas
 
 ## 6. Decisões-Chave (ADRs resumidos — detalhe em 02_especificacao.md M)
 
@@ -111,5 +113,5 @@ Melhorias pós-MVP:
 - **Orca**: run `run_0243e679c3ce` criado, mas workers parados por auth. Worktrees
   em `~/orca/workspaces/Mia/` (estrutura preservada).
 - **Git**: repositório remoto criado em https://github.com/miguzhc012/Mia
-  (commit inicial `6885f4f`, 26 commits até a Fase 16).
-- Repo git local: 7 commits (baseline → docs → fundação → correções).
+  (commit inicial `6885f4f`; 31 commits até as Fases 9–12 + persistência de interesses).
+  Push após cada fase com mensagens descritivas.

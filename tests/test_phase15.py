@@ -67,6 +67,25 @@ class TestInterestTracker:
         tracker.seed_from_personality()
         assert tracker.get("aprendizado") is not None
 
+    def test_persist_and_reload(self, db):
+        """Interesses sobrevivem à recriação do tracker (persistência em DB)."""
+        tracker = InterestTracker(db)
+        tracker._bump("cafe", delta=0.5, source="chat")
+        tracker._persist()
+
+        # novo tracker (simula reinício)
+        tracker2 = InterestTracker(db)
+        interest = tracker2.get("cafe")
+        assert interest is not None
+        assert interest.weight > 0.7
+        assert "chat" in interest.sources
+
+    def test_observe_text_persists(self, db):
+        tracker = InterestTracker(db)
+        tracker.observe_text("gosto de cafe e cafe e mais cafe")
+        tracker2 = InterestTracker(db)
+        assert tracker2.get("cafe") is not None
+
 
 # ======================================================================
 # Relevance Scorer
