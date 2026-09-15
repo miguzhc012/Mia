@@ -39,6 +39,12 @@ class EventType(str, Enum):
     # Autonomous
     RESEARCH_COMPLETED = "research_completed"
     SELF_IMPROVEMENT_PROPOSED = "self_improvement_proposed"
+    # Onboarding v2
+    STATE_CHANGED = "state_changed"
+    BELIEF_UPDATED = "belief_updated"
+    NEED_FULFILLED = "need_fulfilled"
+    DESIRE_FULFILLED = "desire_fulfilled"
+    ATTENTION_DECISION = "attention_decision"
 
 
 # ======================================================================

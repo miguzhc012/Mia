@@ -95,6 +95,12 @@ CREATE TABLE IF NOT EXISTS memory_objects (
     scope TEXT NOT NULL DEFAULT 'personal' CHECK(scope IN ('personal','shared','private')),
     person_id TEXT REFERENCES people(id),
     embedding BLOB,
+    emotional_context TEXT,
+    provenance TEXT,
+    decay_state TEXT DEFAULT 'active',
+    status TEXT DEFAULT 'active',
+    revision_history TEXT,
+    observed_at TEXT,
     version INTEGER NOT NULL DEFAULT 1,
     is_consolidated INTEGER NOT NULL DEFAULT 0,
     access_count INTEGER NOT NULL DEFAULT 0,
@@ -113,6 +119,57 @@ CREATE TABLE IF NOT EXISTS memory_associations (
     strength REAL NOT NULL DEFAULT 0.5,
     created_at TEXT NOT NULL,
     PRIMARY KEY (memory_id, associated_id)
+);
+
+-- beliefs (§21 onboarding v2)
+CREATE TABLE IF NOT EXISTS beliefs (
+    id TEXT PRIMARY KEY,
+    proposition TEXT NOT NULL,
+    confidence REAL DEFAULT 0.5 CHECK(confidence BETWEEN 0.0 AND 1.0),
+    source_evidence TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    status TEXT DEFAULT 'active',
+    revision_history TEXT,
+    person_id TEXT REFERENCES people(id)
+);
+
+-- needs (§16 onboarding v2)
+CREATE TABLE IF NOT EXISTS needs (
+    id TEXT PRIMARY KEY,
+    need_type TEXT NOT NULL,
+    intensity REAL DEFAULT 0.5 CHECK(intensity BETWEEN 0.0 AND 1.0),
+    satisfied INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_fulfilled_at TEXT,
+    person_id TEXT REFERENCES people(id)
+);
+
+-- desires (§16 onboarding v2)
+CREATE TABLE IF NOT EXISTS desires (
+    id TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    desire_type TEXT,
+    priority REAL DEFAULT 0.5 CHECK(priority BETWEEN 0.0 AND 1.0),
+    fulfilled INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    goal_id TEXT REFERENCES goals(id),
+    person_id TEXT REFERENCES people(id)
+);
+
+-- attention_log (§26 onboarding v2)
+CREATE TABLE IF NOT EXISTS attention_log (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    event_id TEXT,
+    decision TEXT NOT NULL,
+    relevance REAL,
+    urgency REAL,
+    importance REAL,
+    reasoning TEXT,
+    created_at TEXT NOT NULL
 );
 
 -- events
