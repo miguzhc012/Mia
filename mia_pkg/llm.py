@@ -9,6 +9,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
+import threading
+import time
 import urllib.request
 import urllib.error
 from abc import ABC, abstractmethod
@@ -60,6 +63,8 @@ class LLMProvider(ABC):
     Providers específicos implementam complete().
     """
 
+    name: str = "provider"
+
     @abstractmethod
     def complete(
         self,
@@ -69,6 +74,21 @@ class LLMProvider(ABC):
     ) -> LLMResponse:
         """Envia prompt e retorna resposta."""
         ...
+
+    def stream(
+        self,
+        messages: list[Message],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ):
+        """Gera resposta incremental (yield fragments).
+
+        Default: yield a resposta completa de uma vez (sem streaming real).
+        Providers que suportam SSE sobrescrevem.
+        """
+        response = self.complete(messages, temperature, max_tokens)
+        if response.content:
+            yield response.content
 
     def is_available(self) -> bool:
         """Verifica se o provider tem credenciais disponíveis."""
@@ -91,11 +111,16 @@ class OpenAICompatProvider(LLMProvider):
         base_url: str = "https://api.openai.com/v1",
         model: str = "gpt-4o-mini",
         api_key_env: str = "OPENAI_API_KEY",
+        max_retries: int = 3,
+        timeout: int = 60,
     ) -> None:
         self.name = name
         self.base_url = base_url.rstrip("/")
         self.model = model
         self._api_key_env = api_key_env
+        self.max_retries = max_retries
+        self.timeout = timeout
+        self._lock = threading.Lock()
 
     def is_available(self) -> bool:
         """Verifica se a chave de API existe no ambiente."""
@@ -137,13 +162,39 @@ class OpenAICompatProvider(LLMProvider):
             },
         )
 
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            raise RuntimeError(f"Erro HTTP {e.code}: {e.read().decode()}") from e
-        except urllib.error.URLError as e:
-            raise RuntimeError(f"Erro de conexão: {e.reason}") from e
+        # Retry com exponential backoff + jitter
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as e:
+                last_error = e
+                code = e.code
+                if code >= 500 or code == 429:
+                    # erro transitório — retry com backoff
+                    delay = (2 ** attempt) + random.uniform(0, 0.5)
+                    logger.warning(
+                        "Provider %s: HTTP %d (tentativa %d/%d), retry em %.1fs",
+                        self.name, code, attempt + 1, self.max_retries, delay,
+                    )
+                    time.sleep(delay)
+                    continue
+                raise RuntimeError(f"Erro HTTP {code}: {e.read().decode()}") from e
+            except urllib.error.URLError as e:
+                last_error = e
+                delay = (2 ** attempt) + random.uniform(0, 0.5)
+                logger.warning(
+                    "Provider %s: conexão falhou (tentativa %d/%d), retry em %.1fs: %s",
+                    self.name, attempt + 1, self.max_retries, delay, e.reason,
+                )
+                time.sleep(delay)
+                continue
+        else:
+            raise RuntimeError(
+                f"Provider {self.name} falhou após {self.max_retries} tentativas: {last_error}"
+            ) from last_error
 
         choice = body.get("choices", [{}])[0]
         msg = choice.get("message", {})
@@ -172,8 +223,9 @@ class LLMProviderChain:
     Tenta cada provider em ordem; se falhar, tenta o próximo.
     """
 
-    def __init__(self, providers: list[LLMProvider] | None = None) -> None:
+    def __init__(self, providers: list[LLMProvider] | None = None, retries: int = 3) -> None:
         self._providers = providers or []
+        self._retries = retries
 
     def add_provider(self, provider: LLMProvider) -> None:
         """Adiciona um provider à chain."""
@@ -185,7 +237,10 @@ class LLMProviderChain:
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> LLMResponse:
-        """Tenta complete em cada provider disponível.
+        """Tenta complete em cada provider disponível, com retry.
+
+        Retry com exponential backoff + jitter em erros transitórios.
+        Se um provider falha definitivamente, tenta o próximo.
 
         Raises:
             RuntimeError: se nenhum provider disponível.
@@ -195,13 +250,58 @@ class LLMProviderChain:
             if not provider.is_available():
                 logger.debug("Provider %s não disponível, pulando.", provider.name)
                 continue
-            try:
-                return provider.complete(messages, temperature, max_tokens)
-            except Exception as e:
-                errors.append(f"{provider.name}: {e}")
-                logger.warning("Provider %s falhou: %s", provider.name, e)
+            # Tenta com retry (transitórios)
+            for attempt in range(self._retries):
+                try:
+                    return provider.complete(messages, temperature, max_tokens)
+                except Exception as e:
+                    errors.append(f"{provider.name}: {e}")
+                    is_transient = (
+                        isinstance(e, urllib.error.HTTPError) and (e.code >= 500 or e.code == 429)
+                    ) or isinstance(e, urllib.error.URLError)
+                    if attempt < self._retries - 1 and is_transient:
+                        delay = (2 ** attempt) + random.uniform(0, 0.5)
+                        logger.warning(
+                            "Provider %s falhou (tentativa %d/%d), retry em %.1fs: %s",
+                            provider.name, attempt + 1, self._retries, delay, e,
+                        )
+                        time.sleep(delay)
+                        continue
+                    # Falha definitiva → tenta próximo provider
+                    logger.warning("Provider %s falhou: %s", provider.name, e)
+                    break
 
         raise RuntimeError(
             "Nenhum LLM provider disponível. "
             f"Erros: {'; '.join(errors) if errors else 'Nenhum provider configurado.'}"
         )
+
+    def stream(
+        self,
+        messages: list[Message],
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ):
+        """Streaming com fallback entre providers.
+
+        Yields fragmentos de texto. Se um provider falhar no meio,
+        tenta o próximo (perde o progresso parcial).
+        """
+        errors: list[str] = []
+        for provider in self._providers:
+            if not provider.is_available():
+                logger.debug("Provider %s não disponível, pulando.", provider.name)
+                continue
+            try:
+                yield from provider.stream(messages, temperature, max_tokens)
+                return
+            except Exception as e:
+                errors.append(f"{provider.name}: {e}")
+                logger.warning("Provider %s falhou no stream: %s", provider.name, e)
+
+        if errors:
+            raise RuntimeError(
+                "Nenhum LLM provider disponível para stream. "
+                f"Erros: {'; '.join(errors)}"
+            )
+        raise RuntimeError("Nenhum LLM provider configurado.")
