@@ -5,3 +5,5 @@ venv/
 *.db
 *.sqlite3
 .env
+*.db-wal
+*.db-shm
