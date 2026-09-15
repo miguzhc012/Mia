@@ -1,7 +1,7 @@
 # MIA — Status de Implementação
 
-> Atualizado em: 2026-09-14 (sessão de orquestração multi-agente)
-> Abrange: Prompts P1–P5 processados · Fundação implementada e revisada
+> Atualizado em: 2026-09-15 (sessão de implementação direta)
+> Abrange: Prompts P1–P5 processados · Fundação + Affective Engine + Identity + Cognitive
 
 ## Legenda
 - ✅ Feito e verificado
@@ -18,7 +18,7 @@
 | P2 — Visual | `docs/art/mia_concept_prompt.md` (142 linhas) | ✅ | Prompt master + 3 variações + parâmetros técnicos |
 | P3 — Planejamento | `docs/02_especificacao.md` (1160 linhas) | ✅ | Seções A–O completas; schemas, contratos, ADRs |
 | P4 — Roadmap | `docs/03_roadmap.md` (1986 linhas) | ✅ | 17 fases, M0–M10, trilha crítica, paralelização |
-| P5 — Construção | `mia_pkg/` (8 módulos) + testes | ✅ | 36 testes passando (verificado por execução real) |
+| P5 — Construção | `mia_pkg/` (15 módulos) + testes | ✅ | 57 testes passando (verificado por execução real) |
 
 ## 2. Debate Arquitetural (Onda 0)
 
@@ -42,16 +42,28 @@
 | `mia_pkg/llm.py` | LLMProvider ABC + OpenAICompat + chain de fallback | ✅ |
 | `mia_pkg/config.py` | Config com defaults, env overrides, sem secrets | ✅ |
 | `mia_pkg/runtime.py` | Runtime: wiring config→db→bus→sa→memory, kill switch | ✅ |
+| `mia_pkg/affective_engine.py` | Emoção (PAD+fuzzy), Sensação, Humor, Estado afetivo | ✅ |
+| `mia_pkg/identity.py` | IdentityManager: self-model, personalidade Big Five, valores | ✅ |
+| `mia_pkg/cognitive_core.py` | Pipeline: interpretação, appraisal, transição de estado, memória | ✅ |
+| `mia_pkg/context_assembly.py` | ContextAssembler: prompt estruturado identidade→emoção→memória | ✅ |
+| `mia_pkg/beliefs.py` | BeliefStore: ciclo de vida, confiança, revisão, rejeição | ✅ |
+| `mia_pkg/needs_desires.py` | NeedsDesiresStore: necessidades ≠ desejos (tabelas separadas) | ✅ |
+| `mia_pkg/attention_policy.py` | AttentionPolicy: avaliação de eventos, decisão IGNORE/NOTIFY/ACT | ✅ |
 | `tests/test_foundation.py` | 36 testes unitários | ✅ |
+| `tests/test_phase2.py` | 21 testes (emotional/identity/beliefs/needs/attention) | ✅ |
 
 ### Testes (execução real verificada)
 ```
-36 passed in 0.15s
+57 passed in 0.38s
 ```
 Cobertura: EventBus (pub/sub, filtro, unsubscribe, circuit breaker, eventos inválidos),
 StateAuthority (transição válida/inválida, LLM bloqueado, SQL injection bloqueado,
 hash chain, verify_chain + tampering), MemoryStore (CRUD, importância, busca),
-PolicyEngine (regras), Config (defaults, JSON, dotted access), Integração.
+PolicyEngine (regras), Config (defaults, JSON, dotted access),
+AffectiveEngine (emoções PAD, fuzzy membership, humor, sensações, appraisals),
+Identity (self-model, personalidade, valores), Beliefs (lifecycle completo),
+NeedsDesires (need ≠ desire, fulfill), AttentionPolicy (IGNORE/NOTIFY/ACT),
+Integração (0.0.0.0 → loopback).
 
 ## 4. Revisão Independente
 

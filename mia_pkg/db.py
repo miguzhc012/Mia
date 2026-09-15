@@ -287,16 +287,17 @@ CREATE TABLE IF NOT EXISTS emotion_state (
     version INTEGER NOT NULL DEFAULT 1
 );
 
--- sensations
+-- sensations (§16 onboarding v2 + spec D.6)
 CREATE TABLE IF NOT EXISTS sensations (
     id TEXT PRIMARY KEY,
-    description TEXT NOT NULL,
-    valence REAL CHECK(valence BETWEEN -1.0 AND 1.0),
+    pleasantness REAL CHECK(pleasantness BETWEEN -1.0 AND 1.0),
+    arousal REAL CHECK(arousal BETWEEN 0.0 AND 1.0),
     intensity REAL CHECK(intensity BETWEEN 0.0 AND 1.0),
-    possible_causes TEXT DEFAULT '[]',
-    detected_at TEXT NOT NULL,
-    resolved INTEGER NOT NULL DEFAULT 0,
-    resolution TEXT
+    cause_known INTEGER NOT NULL DEFAULT 0,
+    cause_description TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    emotion_state_id TEXT,
+    FOREIGN KEY (emotion_state_id) REFERENCES emotion_state(id)
 );
 
 -- diary

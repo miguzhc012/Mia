@@ -82,17 +82,20 @@ class NeedsDesiresStore:
                 last_fulfilled_at, person_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                need.id, need.need_type.value, need.intensity,
+                need.id,
+                need.need_type.value,
+                need.intensity,
                 1 if need.satisfied else 0,
-                need.created_at, need.updated_at,
-                need.last_fulfilled_at, need.person_id,
+                need.created_at,
+                need.updated_at,
+                need.last_fulfilled_at,
+                need.person_id,
             ),
         )
         self._db.commit()
         return need
 
     def fulfill_need(self, need_id: str) -> Need | None:
-        """Marca uma necessidade como satisfeita."""
         row = self._db.fetchone("SELECT * FROM needs WHERE id=?", (need_id,))
         if not row:
             return None
@@ -104,18 +107,30 @@ class NeedsDesiresStore:
         self._db.commit()
         return self._need_from_row(self._db.fetchone("SELECT * FROM needs WHERE id=?", (need_id,)))
 
-    def list_unfulfilled_needs(self, limit: int = 20) -> list[Need]:
+    def list_unfulfilled(self, limit: int = 20) -> list[Need]:
         rows = self._db.fetchall(
             "SELECT * FROM needs WHERE satisfied=0 ORDER BY intensity DESC LIMIT ?",
             (limit,),
         )
         return [self._need_from_row(r) for r in rows]
 
+    def list_unfulfilled_needs(self, limit: int = 20) -> list[Need]:
+        """Lista necessidades não satisfeitas (alias de list_unfulfilled)."""
+        return self.list_unfulfilled(limit)
+
+    def list_unfulfilled_desires(self, limit: int = 20) -> list[Desire]:
+        """Lista desejos não satisfeitos."""
+        rows = self._db.fetchall(
+            "SELECT * FROM desires WHERE fulfilled=0 ORDER BY priority DESC LIMIT ?",
+            (limit,),
+        )
+        return [self._desire_from_row(r) for r in rows]
+
     def get_need(self, need_id: str) -> Need | None:
         row = self._db.fetchone("SELECT * FROM needs WHERE id=?", (need_id,))
         return self._need_from_row(row) if row else None
 
-    def _need_from_row(self, row: dict) -> Need:
+    def _need_from_row(self, row: dict[str, Any]) -> Need:
         return Need(
             id=row["id"],
             need_type=NeedType(row["need_type"]),
@@ -136,11 +151,15 @@ class NeedsDesiresStore:
                 created_at, updated_at, goal_id, person_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                desire.id, desire.description,
+                desire.id,
+                desire.description,
                 desire.desire_type.value if desire.desire_type else None,
-                desire.priority, 1 if desire.fulfilled else 0,
-                desire.created_at, desire.updated_at,
-                desire.goal_id, desire.person_id,
+                desire.priority,
+                1 if desire.fulfilled else 0,
+                desire.created_at,
+                desire.updated_at,
+                desire.goal_id,
+                desire.person_id,
             ),
         )
         self._db.commit()
@@ -158,7 +177,7 @@ class NeedsDesiresStore:
         self._db.commit()
         return self._desire_from_row(self._db.fetchone("SELECT * FROM desires WHERE id=?", (desire_id,)))
 
-    def list_unfulfilled_desires(self, limit: int = 20) -> list[Desire]:
+    def _list_unfulfilled_desires(self, limit: int = 20) -> list[Desire]:
         rows = self._db.fetchall(
             "SELECT * FROM desires WHERE fulfilled=0 ORDER BY priority DESC LIMIT ?",
             (limit,),
@@ -169,7 +188,7 @@ class NeedsDesiresStore:
         row = self._db.fetchone("SELECT * FROM desires WHERE id=?", (desire_id,))
         return self._desire_from_row(row) if row else None
 
-    def _desire_from_row(self, row: dict) -> Desire:
+    def _desire_from_row(self, row: dict[str, Any]) -> Desire:
         dt = row.get("desire_type")
         return Desire(
             id=row["id"],

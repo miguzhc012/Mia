@@ -103,7 +103,10 @@ class BeliefStore:
                SET proposition=?, confidence=?, status='revised',
                    revision_history=?, updated_at=?
                WHERE id=?""",
-            (new_proposition, new_confidence, json.dumps(history), now, belief_id),
+            (
+                new_proposition, new_confidence,
+                json.dumps(history), now, belief_id,
+            ),
         )
         self._db.commit()
         return self.get(belief_id)
@@ -126,7 +129,9 @@ class BeliefStore:
             """UPDATE beliefs
                SET status='rejected', revision_history=?, updated_at=?
                WHERE id=?""",
-            (json.dumps(history), now, belief_id),
+            (
+                json.dumps(history), now, belief_id,
+            ),
         )
         self._db.commit()
         return self.get(belief_id)
@@ -161,12 +166,14 @@ class BeliefStore:
             """UPDATE beliefs
                SET confidence=?, revision_history=?, updated_at=?
                WHERE id=?""",
-            (new_conf, json.dumps(history), now, b.id),
+            (
+                new_conf, json.dumps(history), now, b.id,
+            ),
         )
         self._db.commit()
         return self.get(b.id)
 
-    def _row_to_belief(self, row: dict) -> Belief:
+    def _row_to_belief(self, row: dict[str, Any]) -> Belief:
         return Belief(
             id=row["id"],
             proposition=row["proposition"],
