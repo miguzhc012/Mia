@@ -1,7 +1,7 @@
 # MIA — Status de Implementação
 
-> Atualizado em: 2026-09-15 (sessão de implementação direta)
-> Abrange: Prompts P1–P5 processados · Fundação + Affective Engine + Identity + Cognitive
+> Atualizado em: 2026-09-15 (sessão de implementação autônoma — rodada completa)
+> Abrange: Prompts P1–P5 processados · Fases 0–16 do roadmap · 271 testes
 
 ## Legenda
 - ✅ Feito e verificado
@@ -18,7 +18,7 @@
 | P2 — Visual | `docs/art/mia_concept_prompt.md` (142 linhas) | ✅ | Prompt master + 3 variações + parâmetros técnicos |
 | P3 — Planejamento | `docs/02_especificacao.md` (1160 linhas) | ✅ | Seções A–O completas; schemas, contratos, ADRs |
 | P4 — Roadmap | `docs/03_roadmap.md` (1986 linhas) | ✅ | 17 fases, M0–M10, trilha crítica, paralelização |
-| P5 — Construção | `mia_pkg/` (15 módulos) + testes | ✅ | 57 testes passando (verificado por execução real) |
+| P5 — Construção | `mia_pkg/` (31 módulos) + testes | ✅ | 271 testes passando (verificado por execução real) |
 
 ## 2. Debate Arquitetural (Onda 0)
 
@@ -30,40 +30,40 @@
 
 **Síntese do debate aplicada na especificação:** event bus in-process (pub/sub) + State Authority com 2 engines (State + Policy) para o MVP, evoluível depois. Documentado em `02_especificacao.md` seção D.5.
 
-## 3. Fundação Implementada (Fase 0 do roadmap)
+## 3. Fases Implementadas (0–16)
 
-| Módulo | Responsabilidade | Status |
-|--------|-----------------|--------|
-| `mia_pkg/events.py` | EventBus pub/sub tipado + circuit breaker | ✅ |
-| `mia_pkg/state_authority.py` | Ponto único de escrita de estado; propose→policy→validate→apply→audit | ✅ |
-| `mia_pkg/policy_engine.py` | Regras determinísticas: whitelist targets, bloqueio LLM, invariantes | ✅ |
-| `mia_pkg/memory.py` | MemoryObject + MemoryStore (CRUD, importância, busca) | ✅ |
-| `mia_pkg/db.py` | SQLite (WAL, FK, 15 tabelas, índices) | ✅ |
-| `mia_pkg/llm.py` | LLMProvider ABC + OpenAICompat + chain de fallback | ✅ |
-| `mia_pkg/config.py` | Config com defaults, env overrides, sem secrets | ✅ |
-| `mia_pkg/runtime.py` | Runtime: wiring config→db→bus→sa→memory, kill switch | ✅ |
-| `mia_pkg/affective_engine.py` | Emoção (PAD+fuzzy), Sensação, Humor, Estado afetivo | ✅ |
-| `mia_pkg/identity.py` | IdentityManager: self-model, personalidade Big Five, valores | ✅ |
-| `mia_pkg/cognitive_core.py` | Pipeline: interpretação, appraisal, transição de estado, memória | ✅ |
-| `mia_pkg/context_assembly.py` | ContextAssembler: prompt estruturado identidade→emoção→memória | ✅ |
-| `mia_pkg/beliefs.py` | BeliefStore: ciclo de vida, confiança, revisão, rejeição | ✅ |
-| `mia_pkg/needs_desires.py` | NeedsDesiresStore: necessidades ≠ desejos (tabelas separadas) | ✅ |
-| `mia_pkg/attention_policy.py` | AttentionPolicy: avaliação de eventos, decisão IGNORE/NOTIFY/ACT | ✅ |
-| `tests/test_foundation.py` | 36 testes unitários | ✅ |
-| `tests/test_phase2.py` | 21 testes (emotional/identity/beliefs/needs/attention) | ✅ |
+| Fase | Módulos | Status |
+|------|---------|--------|
+| 0 — Fundação | events, state_authority, policy_engine, db, runtime | ✅ |
+| 1 — LLM + Core + Context | llm, cognitive_core, context_assembly, chat | ✅ |
+| 2 — Memória | memory, consolidation, attention_policy | ✅ |
+| 3 — Identidade | identity, identity_authority | ✅ |
+| 4 — Emoção/Mood | affective_engine, emotion_governor | ✅ |
+| 5 — Social | social (people, relationships, boundaries) | ✅ |
+| 6 — Autonomia | autonomy (goals, initiative, governor) | ✅ |
+| 7 — Reflexão | reflection, belief_revision, beliefs | ✅ |
+| 8 — Security | security (redactor, rate, integrity, sandbox) | ✅ |
+| 9 — Voz | (planejado — TTS/STT externo) | ⬜ |
+| 10 — Visão | (planejado — percepção) | ⬜ |
+| 11 — Avatar | (planejado — embodiment) | ⬜ |
+| 12 — Nós | (planejado — distribuído) | ⬜ |
+| 13 — Subagentes | agents (registry, orchestrator, templates) | ✅ |
+| 14 — World Awareness | world (interests, relevance, research) | ✅ |
+| 15 — Autoevolução | evolution (engine, canary, rollback) | ✅ |
+| 16 — Integração | monitoring (health, backup), test_e2e | ✅ |
 
 ### Testes (execução real verificada)
 ```
-57 passed in 0.38s
+271 passed in 1.89s
 ```
-Cobertura: EventBus (pub/sub, filtro, unsubscribe, circuit breaker, eventos inválidos),
-StateAuthority (transição válida/inválida, LLM bloqueado, SQL injection bloqueado,
-hash chain, verify_chain + tampering), MemoryStore (CRUD, importância, busca),
-PolicyEngine (regras), Config (defaults, JSON, dotted access),
-AffectiveEngine (emoções PAD, fuzzy membership, humor, sensações, appraisals),
-Identity (self-model, personalidade, valores), Beliefs (lifecycle completo),
-NeedsDesires (need ≠ desire, fulfill), AttentionPolicy (IGNORE/NOTIFY/ACT),
-Integração (0.0.0.0 → loopback).
+Cobertura: EventBus (pub/sub, filtro, unsubscribe, circuit breaker), StateAuthority
+(transições, LLM bloqueado, SQL injection, hash chain), Memory (CRUD, importância,
+consolidação, decay), PolicyEngine, AffectiveEngine (PAD, fuzzy, humor, sensações),
+Identity (Big Five, evolução por interações), Beliefs, NeedsDesires, AttentionPolicy,
+Social (pessoas, relações, limites), Autonomy (goals, iniciativa, recursos),
+Reflection (diário, crenças), Security, Agents (registry, orchestrator, kill switch),
+World (interesses, pesquisa, knowledge), Evolution (canary, rollback),
+Monitoring (health, backup/restore), E2E (fluxos completos).
 
 ## 4. Revisão Independente
 
@@ -81,14 +81,18 @@ Veredito: **APROVADO COM RESSALVAS** (2 críticos, 3 altos encontrados)
 
 ## 5. Roadmap — Próximos Passos
 
-Próximas fases (conforme `docs/03_roadmap.md`):
-1. **Fase 1** — LLM Abstraction completa + Cognitive Core + Context Assembly (async, streaming)
-2. **Fase 2** — Memória: consolidação, esquecimento, associações, versionamento append-only
-3. **Fase 3** — Identidade / Self-model / Personalidade persistente
-4. **Fase 4** — Emoção / Sensação / Humor / Necessidades
+Conforme `docs/03_roadmap.md` e `docs/roadmap_mia.excalidraw`:
 
-Primeira release (v0.1): Fase 0–6 → MIA conversa, lembra, tem identidade, emoções,
-diário e reflexão; State Authority controla todas as mudanças; kill switch funcional.
+Próximas (fases que dependem de integração externa):
+1. **Fase 9** — Voz: TTS/STT (edge-tts/piper local, sem nuvem paga)
+2. **Fase 10** — Visão: percepção de imagens (modelo multimodal)
+3. **Fase 11** — Avatar: embodiment virtual
+4. **Fase 12** — Nós distribuídos: mobile/desktop (n8n/hook)
+
+Melhorias pós-MVP:
+- Persistência de interesses do InterestTracker em DB (hoje em memória)
+- Integração com LLM real (hoje mock/stub nos testes)
+- Autoevolução de código (hoje só parâmetros)
 
 ## 6. Decisões-Chave (ADRs resumidos — detalhe em 02_especificacao.md M)
 
@@ -106,4 +110,6 @@ diário e reflexão; State Authority controla todas as mudanças; kill switch fu
   corrigir a chave no gateway omniroute.
 - **Orca**: run `run_0243e679c3ce` criado, mas workers parados por auth. Worktrees
   em `~/orca/workspaces/Mia/` (estrutura preservada).
+- **Git**: repositório remoto criado em https://github.com/miguzhc012/Mia
+  (commit inicial `6885f4f`, 26 commits até a Fase 16).
 - Repo git local: 7 commits (baseline → docs → fundação → correções).

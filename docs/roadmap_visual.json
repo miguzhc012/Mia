@@ -1,0 +1,47 @@
+{
+  "title": "MIA - Roadmap de Implementacao",
+  "type": "now-next-later",
+  "columns": [
+    {
+      "name": "Concluido (0-8, 13-16)",
+      "color": "#b2f2bb",
+      "items": [
+        "Fase 0: Fundacao (EventBus, State Authority, SQLite)",
+        "Fase 1: LLM + Cognitive Core + Context Assembly",
+        "Fase 2: Memoria (retrieval, consolidacao, decay)",
+        "Fase 3: Identidade (Big Five, evolucao por interacoes)",
+        "Fase 4: Emocao (PAD, mood temporal, governor)",
+        "Fase 5: Social (pessoas, relacoes, limites)",
+        "Fase 6: Autonomia (goals, iniciativa, recursos)",
+        "Fase 7: Reflexao (diario, crencas, imaginacao)",
+        "Fase 8: Security (redactor, rate limit, sandbox)",
+        "Fase 13: Subagentes (registry, orchestrator)",
+        "Fase 14: World Awareness (interesses, pesquisa)",
+        "Fase 15: Autoevolucao (canary, rollback)",
+        "Fase 16: Integracao (monitoring, E2E, backup)"
+      ]
+    },
+    {
+      "name": "Proximas",
+      "color": "#ffd8a8",
+      "items": [
+        "Fase 9: Voz (TTS/STT - edge/piper local)",
+        "Fase 10: Visao (percepcao de imagens)",
+        "Fase 11: Avatar (embodiment)",
+        "Fase 12: Nos distribuidos (mobile/desktop)",
+        "Persistencia de interesses em DB",
+        "Integracao LLM real (nao mock)"
+      ]
+    },
+    {
+      "name": "Depois",
+      "color": "#a5d8ff",
+      "items": [
+        "Criacao de ferramentas pela propria Mia",
+        "Mudancas de codigo auto-evolutivas",
+        "Multi-usuario / identidades separadas",
+        "Deploy distribuido multi-no"
+      ]
+    }
+  ]
+}
