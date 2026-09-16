@@ -169,6 +169,125 @@ class SyncEngine:
         "goals", "needs",
     ]
 
+    # Whitelist EXPLÍCITA de colunas por tabela — um snapshot remoto é
+    # entrada NÃO CONFIÁVEL. Nenhuma coluna fora desta lista é aceita.
+    SYNC_COLUMNS: dict[str, set[str]] = {
+        "memory_objects": {
+            "id", "content", "type", "source", "created_at", "updated_at",
+            "importance", "confidence", "scope", "person_id", "embedding",
+            "emotional_context", "provenance", "decay_state", "status",
+            "revision_history", "observed_at", "version", "is_consolidated",
+            "access_count", "last_accessed_at", "tags",
+        },
+        "beliefs": {
+            "id", "proposition", "confidence", "source_evidence",
+            "created_at", "updated_at", "status", "revision_history",
+            "person_id",
+        },
+        "people": {
+            "id", "name", "first_seen", "last_seen", "metadata",
+        },
+        "relationships": {
+            "id", "person_id", "trust", "intimacy", "affinity", "familiarity",
+            "interaction_count", "last_interaction", "version", "created_at",
+            "updated_at", "history",
+        },
+        "identity_state": {
+            "id", "name", "self_model", "core_values", "version",
+            "snapshot_at", "previous_version",
+        },
+        "personality_state": {
+            "id", "openness", "conscientiousness", "extraversion",
+            "agreeableness", "neuroticism", "curiosity", "playfulness",
+            "assertiveness", "empathy", "independence", "version",
+            "snapshot_at",
+        },
+        "emotion_state": {
+            "id", "happiness", "sadness", "anger", "fear", "surprise",
+            "disgust", "trust_level", "anticipation", "curiosity_level",
+            "loneliness", "affection", "boredom", "mood_valence",
+            "mood_arousal", "mood_dominance", "snapshot_at", "version",
+        },
+        "goals": {
+            "id", "description", "priority", "status", "created_at",
+            "completed_at", "deadline", "progress",
+        },
+        "needs": {
+            "id", "need_type", "intensity", "satisfied", "created_at",
+            "updated_at", "last_fulfilled_at", "person_id",
+        },
+    }
+
+    class SnapshotValidationError(Exception):
+        """Snapshot rejeitado por validação estrutural (entrada não confiável)."""
+
+    @classmethod
+    def validate_snapshot_rows(cls, table: str, rows: list[dict[str, Any]]) -> None:
+        """Valida estrutura de um snapshot ANTES de qualquer SQL.
+
+        Regras:
+        1. tabela conhecida (SYNC_TABLES)
+        2. cada linha é dict
+        3. colunas todas na whitelist da tabela
+        4. sem colunas duplicadas (dict não duplica, mas validamos nome→SQL)
+        5. pelo menos 1 coluna
+        6. payload compatível (chaves == colunas; valores serializáveis)
+
+        Lança SnapshotValidationError — o snapshot é REJEITADO,
+        nunca parcialmente aplicado.
+        """
+        if table not in cls.SYNC_TABLES:
+            raise cls.SnapshotValidationError(
+                f"tabela fora da whitelist: {table!r}"
+            )
+        allowed = cls.SYNC_COLUMNS.get(table)
+        if allowed is None:
+            raise cls.SnapshotValidationError(
+                f"sem whitelist de colunas para tabela {table!r}"
+            )
+        # valida identificadores (defesa extra — nunca confiar no peer)
+        for token in (table,):
+            if not token.replace("_", "").isalnum():
+                raise cls.SnapshotValidationError(
+                    f"identificador inválido: {token!r}"
+                )
+        if not isinstance(rows, list):
+            raise cls.SnapshotValidationError(
+                f"rows de {table!r} não é lista"
+            )
+        for row in rows:
+            if not isinstance(row, dict):
+                raise cls.SnapshotValidationError(
+                    f"linha de {table!r} não é dict: {type(row).__name__}"
+                )
+            if not row:
+                raise cls.SnapshotValidationError(
+                    f"linha vazia em {table!r}"
+                )
+            for col in row.keys():
+                if not isinstance(col, str):
+                    raise cls.SnapshotValidationError(
+                        f"coluna não-string em {table!r}: {col!r}"
+                    )
+                if col not in allowed:
+                    raise cls.SnapshotValidationError(
+                        f"coluna fora da whitelist em {table!r}: {col!r}"
+                    )
+                if not col.replace("_", "").isalnum():
+                    raise cls.SnapshotValidationError(
+                        f"nome de coluna inválido em {table!r}: {col!r}"
+                    )
+            # valores serializáveis (JSON) — barra tipos estranhos.
+            # NÃO usamos default=str: bytes/set/object não são JSON nativo
+            # e seriam normalizados de forma ambígua/inesperada.
+            for k, v in row.items():
+                try:
+                    json.dumps(v)
+                except (TypeError, ValueError) as e:
+                    raise cls.SnapshotValidationError(
+                        f"valor não serializável em {table!r}.{k}: {e}"
+                    )
+
     def __init__(self, db: SQLiteConnection, node: NodeManager,
                  bus: EventBus | None = None) -> None:
         self._db = db
@@ -202,15 +321,30 @@ class SyncEngine:
 
         Substitui tabelas alvo inteiras (master wins: snapshot do master
         sobrepõe estado local do client).
+
+        Segurança: o snapshot é entrada NÃO CONFIÁVEL. Toda a estrutura é
+        validada ANTES de qualquer SQL (tabelas e colunas via whitelist).
+        Se qualquer tabela/linha for inválida, o snapshot inteiro é REJEITADO
+        (SnapshotValidationError) — nada é aplicado parcialmente.
         """
+        # 0. Validação estrutural ANTES de qualquer escrita
         if snap.checksum and snap.checksum != snap.compute_checksum():
             logger.warning("checksum mismatch no snapshot %s", snap.node_id)
             return 0
 
+        for table, rows in snap.tables.items():
+            try:
+                self.validate_snapshot_rows(table, rows)
+            except self.SnapshotValidationError:
+                # snapshot inválido → rejeita tudo (nada aplicado)
+                logger.error(
+                    "snapshot rejeitado (fonte %s): tabela %r inválida",
+                    snap.node_id, table,
+                )
+                raise
+
         applied = 0
         for table, rows in snap.tables.items():
-            if table not in self.SYNC_TABLES:
-                continue
             try:
                 self._db.execute(f"DELETE FROM {table}")
                 for row in rows:

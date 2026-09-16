@@ -222,3 +222,123 @@ class TestConflictResolver:
         # client snapshot só aplica se não sou master
         assert resolver.should_apply(client, is_master_local=False)
         assert not resolver.should_apply(client, is_master_local=True)
+
+
+# ======================================================================
+# Testes de SEGURANÇA — snapshot é entrada NÃO CONFIÁVEL
+# ======================================================================
+
+class TestSnapshotSecurity:
+    """Validação estrutural de snapshots remotos (anti SQL injection)."""
+
+    def _snap(self, tables):
+        return SyncSnapshot(node_id="evil", created_s=0.0, tables=tables)
+
+    def test_invalid_column_rejected(self, db):
+        nm = NodeManager(db)
+        sync = SyncEngine(db, nm)
+        snap = self._snap({
+            "people": [{"id": "1", "name": "x", "evil_column; DROP TABLE people; --": "1"}]
+        })
+        with pytest.raises(SyncEngine.SnapshotValidationError):
+            sync.apply_snapshot(snap)
+        # nada foi apagado — tabela intacta
+        rows = db.fetchall("SELECT COUNT(*) AS n FROM people")
+        assert rows[0]["n"] == 0
+
+    def test_sql_injection_column_name(self, db):
+        nm = NodeManager(db)
+        sync = SyncEngine(db, nm)
+        snap = self._snap({
+            "people": [{"id": "1", "name": "x", "name); DROP TABLE people; --": "y"}]
+        })
+        with pytest.raises(SyncEngine.SnapshotValidationError):
+            sync.apply_snapshot(snap)
+
+    def test_duplicate_column_rejected(self, db):
+        nm = NodeManager(db)
+        sync = SyncEngine(db, nm)
+        # dict não pode ter chave duplicada em Python — mas payload JSON
+        # poderia. Validamos que a linha não tem chaves vazias/duplicadas.
+        snap = self._snap({
+            "people": [{"id": "1", "name": "a", "": "x"}]
+        })
+        with pytest.raises(SyncEngine.SnapshotValidationError):
+            sync.apply_snapshot(snap)
+
+    def test_valid_table_malicious_column(self, db):
+        nm = NodeManager(db)
+        sync = SyncEngine(db, nm)
+        snap = self._snap({
+            "memory_objects": [{
+                "id": "1", "content": "hi", "type": "experience",
+                "source": "x", "created_at": "t", "updated_at": "t",
+                "importance": 0.5, "confidence": 0.5, "scope": "personal",
+                "person_id": None, "embedding": None, "emotional_context": None,
+                "provenance": None, "decay_state": "active", "status": "active",
+                "revision_history": None, "observed_at": None, "version": 1,
+                "is_consolidated": 0, "access_count": 0, "last_accessed_at": None,
+                "tags": "[]",
+                "evil); DROP TABLE memory_objects; --": "1",
+            }]
+        })
+        with pytest.raises(SyncEngine.SnapshotValidationError):
+            sync.apply_snapshot(snap)
+
+    def test_empty_payload_rejected(self, db):
+        nm = NodeManager(db)
+        sync = SyncEngine(db, nm)
+        snap = self._snap({"people": []})  # lista vazia é válida (tabela vazia)
+        assert sync.apply_snapshot(snap) == 0
+        snap2 = self._snap({"people": [{}]})  # linha vazia → inválida
+        with pytest.raises(SyncEngine.SnapshotValidationError):
+            sync.apply_snapshot(snap2)
+
+    def test_unknown_table_rejected(self, db):
+        nm = NodeManager(db)
+        sync = SyncEngine(db, nm)
+        snap = self._snap({"users": [{"id": "1"}]})
+        with pytest.raises(SyncEngine.SnapshotValidationError):
+            sync.apply_snapshot(snap)
+
+    def test_nonserializable_value_rejected(self, db):
+        nm = NodeManager(db)
+        sync = SyncEngine(db, nm)
+        # bytes é aceito pelo sqlite, mas é estrutura não confiável para
+        # snapshot textual — rejeitamos via validação de serialização JSON
+        # strict (sem default=str) para não aceitar payloads arbitrários.
+        snap = self._snap({"people": [{"id": "1", "name": "x", "first_seen": b"\x00\x01"}]})
+        with pytest.raises(SyncEngine.SnapshotValidationError):
+            sync.apply_snapshot(snap)
+
+    def test_valid_snapshot_still_applies(self, db):
+        nm = NodeManager(db)
+        sync = SyncEngine(db, nm)
+        snap = self._snap({
+            "people": [{"id": "1", "name": "Maria", "first_seen": "t",
+                        "last_seen": None, "metadata": "{}"}]
+        })
+        applied = sync.apply_snapshot(snap)
+        assert applied == 1
+        rows = db.fetchall("SELECT * FROM people")
+        assert rows[0]["name"] == "Maria"
+
+    def test_reject_does_not_partially_apply(self, db):
+        """Tabela válida + tabela inválida → NADA aplicado (all-or-nothing)."""
+        nm = NodeManager(db)
+        sync = SyncEngine(db, nm)
+        snap = self._snap({
+            "people": [{"id": "1", "name": "Maria", "first_seen": "t",
+                        "last_seen": None, "metadata": "{}"}],
+            "goals": [{"id": "2", "description": "x", "priority": 5,
+                       "status": "active", "created_at": "t",
+                       "completed_at": None, "deadline": None, "progress": 0.0,
+                       "evil": "col"}],
+        })
+        with pytest.raises(SyncEngine.SnapshotValidationError):
+            sync.apply_snapshot(snap)
+        # people NÃO foi aplicada (validação antes de escrever)
+        rows = db.fetchall("SELECT COUNT(*) AS n FROM people")
+        assert rows[0]["n"] == 0
+        rows = db.fetchall("SELECT COUNT(*) AS n FROM goals")
+        assert rows[0]["n"] == 0
