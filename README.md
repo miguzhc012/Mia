@@ -5,7 +5,7 @@ um sistema cognitivo completo: percebe eventos, interpreta com um modelo de
 si mesma (self-model), sente, lembra, se relaciona, reflete e evolui
 autonomamente.
 
-> **Status atual: 357 testes passando · 31 commits · 35 módulos · Fases 0–16 cobertas**
+> **Status atual: 452 testes passando · 85% cobertura · CI (3.11/3.12) · Fases 0–16 + hardening H1–H26**
 
 ---
 
@@ -214,11 +214,31 @@ consolidação → autonomia → evolução → subagentes → pesquisa idle.
 
 | Arquivo | Cobre |
 |---------|-------|
-| `test_foundation.py` | Fase 0 (36 testes) |
-| `test_phase2..16.py` | Fases 2–16 (módulos dedicados) |
-| `test_e2e.py` | Integração completa (fluxos E2E) |
+| `test_foundation.py` | Fase 0 + EventBus/StateAuthority/Security |
+| `test_phase2..20.py` | Fases 2–20 (módulos dedicados) |
+| `test_e2e.py` + `test_e2e_failure.py` | Integração completa + degradação honesta |
+| `test_restart.py` | Persistência entre restart de processo |
+| `test_trust.py` | Trust boundary (identidade, kill switch, read-only) |
+| `test_memory_versioning.py` | MemoryObject imutável/versionado |
+| `test_events_provenance.py` | Provenance + contrato de falha do EventBus |
+| `test_config_hardening.py` | Config imutável + dotenv |
 
-Rodar: `python3 -m pytest tests/ -q`
+Rodar: `python3 -m pytest tests/ -q` → **452 passed** (~3.5s), cobertura 85%.
+
+---
+
+## Hardening & Segurança (rodada H1–H26)
+
+- **SQL injection** — whitelist de colunas por tabela antes de qualquer SQL em `distributed.py`
+- **MemoryObject imutável** — updates criam nova versão, histórico preservado (PK composta `(id, version)`)
+- **EventBus** — `emit()` retorna bool; rejeição e circuito aberto levantam exceção (nunca silencioso); provenance `correlation_id`/`causation_id`
+- **Trust boundary** (`mia_pkg/trust.py`) — source declarada ≠ caller autenticado; kill switch real; read-only mode com `assert_mutable()`
+- **BudgetAuthority** — orçamento global persistido (restart não zera): custos e chamadas por dia
+- **Config** — imutável após carregamento; lê `.env` independente de cwd
+- **Restart tests** — memória, identidade e orçamento sobrevivem entre processos
+- **CI** — GitHub Actions: matrix 3.11/3.12, cobertura ≥60%, ruff, mypy soft
+
+Detalhes por item: `docs/IMPLEMENTATION_STATUS.md` (seção 0).
 
 ---
 
