@@ -232,6 +232,183 @@ class TestAgentDepth:
 
 
 # ======================================================================
+# Concorrência — SQLiteConnection multi-thread (regressão H3/H25)
+#
+# O hard timeout introduziu worker threads; a conexão SQLite era criada
+# na thread principal e falhava com check_same_thread. Agora a conexão
+# é compartilhada com lock (RLock) e check_same_thread=False.
+# ======================================================================
+
+class TestConcurrentDB:
+    def test_write_from_worker_thread(self, db):
+        """Escrita a partir de outra thread funciona (check_same_thread=False)."""
+        import threading
+
+        errors = []
+        def _worker():
+            try:
+                db.execute(
+                    "INSERT INTO people (id, name, first_seen) VALUES (?, ?, ?)",
+                    ("w1", "worker", "now"),
+                )
+                db.commit()
+            except Exception as e:  # pragma: no cover
+                errors.append(e)
+
+        t = threading.Thread(target=_worker)
+        t.start()
+        t.join()
+        assert not errors, f"worker falhou: {errors}"
+        rows = db.fetchall("SELECT * FROM people WHERE id='w1'")
+        assert len(rows) == 1
+
+    def test_concurrent_writes_serialized(self, db):
+        """20 threads escrevendo simultaneamente não corrompem/erram."""
+        import threading
+
+        errors: list[Exception] = []
+        lock = threading.Lock()
+
+        def _worker(i: int):
+            try:
+                db.execute(
+                    "INSERT INTO people (id, name, first_seen) VALUES (?, ?, ?)",
+                    (f"c{i}", f"conc-{i}", "now"),
+                )
+                db.commit()
+            except Exception as e:  # pragma: no cover
+                with lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=_worker, args=(i,)) for i in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errors
+        rows = db.fetchall("SELECT COUNT(*) AS n FROM people")
+        assert rows[0]["n"] == 20
+
+    def test_read_during_write_no_crash(self, db):
+        """Leituras concorrentes com escrita em andamento não quebram."""
+        import threading
+        import time
+
+        db.execute("INSERT INTO people (id, name, first_seen) VALUES ('seed', 'x', 'now')")
+        db.commit()
+        stop = threading.Event()
+        read_errors: list[Exception] = []
+
+        def _writer():
+            i = 0
+            while not stop.is_set():
+                db.execute(
+                    "INSERT INTO people (id, name, first_seen) VALUES (?, ?, ?)",
+                    (f"w{i}", "w", "now"),
+                )
+                db.commit()
+                i += 1
+
+        def _reader():
+            try:
+                while not stop.is_set():
+                    db.fetchall("SELECT * FROM people")
+            except Exception as e:  # pragma: no cover
+                read_errors.append(e)
+
+        w = threading.Thread(target=_writer)
+        r = threading.Thread(target=_reader)
+        w.start(); r.start()
+        time.sleep(0.2)
+        stop.set()
+        w.join(); r.join()
+        assert not read_errors
+
+
+# ======================================================================
+# Hard timeout (regressão H3)
+#
+# O bug antigo: o tempo era verificado DEPOIS de `agent.run` terminar —
+# um agente que rodava 8 minutos com limite de 60s só era penalizado
+# ao final (soft check pós-hoc), sem interrupção real. `run_with_timeout`
+# agora interrompe de verdade (worker thread + join com limite).
+# ======================================================================
+
+class TestHardTimeout:
+    def _slow_agent(self, registry, delay=2.0):
+        """Agente que dorme `delay` segundos (simula trabalho longo)."""
+        from mia_pkg.agents import AgentConfig, AgentRole, SubAgent
+
+        slow = SubAgent(
+            name="slow-1", role=AgentRole.GENERAL,
+            config=AgentConfig(
+                role=AgentRole.GENERAL, max_depth=2,
+                max_time_seconds=60.0, capabilities=["slow_work"],
+            ),
+        )
+        def _run(task, governor, db):
+            import time as _t
+            _t.sleep(delay)
+            return AgentResult(task.id, True, output="lento terminou")
+        slow.run = _run
+        registry.register(slow)
+        return slow
+
+    def test_hard_timeout_kills_long_task(self, db, registry):
+        """Tarefa que estoura o limite é marcada TIMEOUT (não DONE)."""
+        from mia_pkg.agents import run_with_timeout, AgentConfig, AgentTask
+
+        self._slow_agent(registry, delay=2.0)
+        agent = registry.find_for_capability("slow_work")
+        task = AgentTask("trabalho longo", config=agent.config)
+        # limite de 0.1s para tarefa que leva 2s
+        result = run_with_timeout(
+            agent.run, task, OrchestrationGovernor(max_time_seconds=0.1),
+            db, limit_s=0.1,
+        )
+        assert result.status.value == "timeout"
+        assert "hard timeout" in result.error
+        assert not result.success
+
+    def test_fast_task_completes_within_limit(self, db, registry):
+        """Tarefa rápida dentro do limite → resultado normal."""
+        from mia_pkg.agents import run_with_timeout
+
+        slow = self._slow_agent(registry, delay=0.0)
+        task = AgentTask("rápida", config=slow.config)
+        result = run_with_timeout(
+            slow.run, task, OrchestrationGovernor(max_time_seconds=5.0),
+            db, limit_s=5.0,
+        )
+        assert result.success
+        assert result.status != AgentStatus.TIMEOUT
+
+    def test_delegate_returns_timeout_status(self, db, registry):
+        """Delegate com agente lento e governor com limite baixo → TIMEOUT."""
+        self._slow_agent(registry, delay=3.0)
+        orch = Orchestrator(
+            db, registry, OrchestrationGovernor(max_time_seconds=0.1)
+        )
+        result = orch.delegate("tarefa lenta", capability="slow_work")
+        assert result.status == AgentStatus.TIMEOUT
+        assert "hard timeout" in result.error
+        # slot do governor liberado após timeout
+        assert orch.governor.running_count == 0
+
+    def test_slot_released_after_timeout(self, db, registry):
+        """Após hard timeout, o governador não retém o slot."""
+        self._slow_agent(registry, delay=2.0)
+        orch = Orchestrator(
+            db, registry, OrchestrationGovernor(max_time_seconds=0.1)
+        )
+        orch.delegate("tarefa lenta", capability="slow_work")
+        assert orch.governor.running_count == 0
+        # um novo delegate pode rodar
+        r2 = orch.delegate("pesquisa rápida", capability="search")
+        assert r2.success
+
+
+# ======================================================================
 # Orchestrator
 # ======================================================================
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,10 @@ class SQLiteConnection:
     def __init__(self, db_path: str | Path) -> None:
         self._db_path = str(db_path)
         self._conn: sqlite3.Connection | None = None
+        # Thread-safety: conexão compartilhada entre threads (workers de
+        # subagentes, EventBus, timers). Lock serializa acessos — SQLite
+        # com check_same_thread=False exige disciplina do cliente.
+        self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -20,22 +25,29 @@ class SQLiteConnection:
 
     def connect(self) -> None:
         """Abre a conexão e configura WAL mode + row_factory = dict."""
-        self._conn = sqlite3.connect(self._db_path)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA foreign_keys=ON")
+        with self._lock:
+            self._conn = sqlite3.connect(
+                self._db_path, check_same_thread=False
+            )
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA foreign_keys=ON")
+            # timeout de lock: evita OperationalError em escrita concorrente
+            self._conn.execute("PRAGMA busy_timeout=5000")
 
     def close(self) -> None:
         """Fecha a conexão graceful."""
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        with self._lock:
+            if self._conn:
+                self._conn.close()
+                self._conn = None
 
     @property
     def connection(self) -> sqlite3.Connection:
-        if self._conn is None:
-            raise RuntimeError("Banco não conectado. Chame connect() primeiro.")
-        return self._conn
+        with self._lock:
+            if self._conn is None:
+                raise RuntimeError("Banco não conectado. Chame connect() primeiro.")
+            return self._conn
 
     # ------------------------------------------------------------------
     # Schema
@@ -74,23 +86,28 @@ class SQLiteConnection:
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> sqlite3.Cursor:
         """Executa SQL e retorna cursor."""
-        return self.connection.execute(sql, params)
+        with self._lock:
+            return self.connection.execute(sql, params)
 
     def executemany(self, sql: str, params: list[tuple[Any, ...]]) -> sqlite3.Cursor:
         """Executa SQL em lote."""
-        return self.connection.executemany(sql, params)
+        with self._lock:
+            return self.connection.executemany(sql, params)
 
     def commit(self) -> None:
-        self.connection.commit()
+        with self._lock:
+            self.connection.commit()
 
     def fetchone(self, sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
         """Retorna uma linha como dict ou None."""
-        row = self.connection.execute(sql, params).fetchone()
+        with self._lock:
+            row = self.connection.execute(sql, params).fetchone()
         return dict(row) if row else None
 
     def fetchall(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
         """Retorna todas as linhas como lista de dicts."""
-        return [dict(r) for r in self.connection.execute(sql, params).fetchall()]
+        with self._lock:
+            return [dict(r) for r in self.connection.execute(sql, params).fetchall()]
 
 
 # ======================================================================

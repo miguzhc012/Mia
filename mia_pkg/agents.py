@@ -24,6 +24,7 @@ class AgentStatus(Enum):
     FAILED = "failed"
     KILLED = "killed"
     BLOCKED = "blocked"
+    TIMEOUT = "timeout"   # hard timeout: execução abandonada
 
 
 class AgentRole(Enum):
@@ -206,6 +207,59 @@ class OrchestrationGovernor:
 # Orchestrator
 # ======================================================================
 
+def run_with_timeout(
+    fn: Callable[..., AgentResult],
+    task: AgentTask,
+    governor,
+    db: SQLiteConnection,
+    limit_s: float,
+) -> AgentResult:
+    """Executa `fn` com HARD TIMEOUT real (thread worker + join).
+
+    - dentro do limite: retorna o resultado do worker;
+    - estourou: worker daemon é abandonado (não segura recursos),
+      tarefa marcada AgentStatus.TIMEOUT.
+
+    Soft limit vs Hard limit:
+    - soft: registrar/alerta/marcar como excedido (check_time);
+    - hard: interromper de verdade e liberar recursos (este helper).
+
+    Para subprocessos/agentes externos reais o controle deve ser o
+    process handle (terminate/kill) — ver SubProcessAgent quando existir.
+    """
+    import threading
+
+    box: dict[str, AgentResult] = {}
+
+    def _target() -> None:
+        try:
+            box["result"] = fn(task, governor, db)
+        except Exception as e:  # pragma: no cover - erro do worker
+            box["result"] = AgentResult(
+                task.id, False, error=str(e), status=AgentStatus.FAILED,
+            )
+
+    worker = threading.Thread(target=_target, daemon=True)
+    worker.start()
+    worker.join(timeout=limit_s)
+    if worker.is_alive():
+        logger.warning(
+            "hard timeout: tarefa %s excedeu %.1fs e foi abandonada",
+            task.id, limit_s,
+        )
+        return AgentResult(
+            task.id, False,
+            error=f"hard timeout: excedeu {limit_s:.0f}s",
+            status=AgentStatus.TIMEOUT,
+        )
+    result = box.get("result")
+    if result is None:
+        return AgentResult(
+            task.id, False, error="worker sem resultado", status=AgentStatus.FAILED,
+        )
+    return result
+
+
 class Orchestrator:
     """Roteia tarefas para agentes, respeitando limites do Governor."""
 
@@ -315,13 +369,23 @@ class Orchestrator:
         agent.status = AgentStatus.RUNNING
         result: AgentResult | None = None
         try:
-            # verifica tempo periodicamente
-            result = agent.run(task, self.governor, self._db)
-            if self.governor.check_time(start, agent.config):
-                result.status = AgentStatus.DONE if result.success else AgentStatus.FAILED
+            # HARD TIMEOUT: executa em worker thread com limite real
+            # (limite do governor e do agente — o menor vence).
+            limit_s = min(self.governor.max_time_seconds, agent.config.max_time_seconds)
+            result = run_with_timeout(agent.run, task, self.governor, self._db, limit_s)
+            if result.status == AgentStatus.TIMEOUT:
+                # hard timeout real — worker abandonado, nada a preservar
+                pass
+            elif self.governor.check_time(start, agent.config):
+                # soft check: ainda dentro do limite quando terminou
+                if result.status in (AgentStatus.FAILED, AgentStatus.KILLED):
+                    pass  # preserva status de falha/kill
+                else:
+                    result.status = AgentStatus.DONE if result.success else AgentStatus.FAILED
             else:
+                # soft limit excedido (tarefa terminou além da janela)
                 result.status = AgentStatus.BLOCKED
-                result.error = "tempo excedido"
+                result.error = "soft limit: tempo excedido"
                 result.success = False
         except Exception as e:
             result = AgentResult(
