@@ -113,12 +113,34 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return merged
 
 
+def _load_dotenv(path: Path) -> None:
+    """Carrega variáveis de um arquivo .env para os.environ (sem sobrescrever).
+
+    Formato: KEY=value (comentários # e linhas em branco ignorados).
+    """
+    if not path.exists():
+        return
+    try:
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    except OSError:
+        pass
+
+
 def load_config(config_dir: str | Path | None = None) -> Config:
     """Carrega configuração de ~/.config/mia/ (YAML ou JSON).
 
-    1. Começa com defaults.
-    2. Aplica overrides do arquivo de config.
-    3. Aplica overrides de variáveis de ambiente (MIA_*).
+    1. Carrega .env do diretório do projeto (se existir).
+    2. Começa com defaults.
+    3. Aplica overrides do arquivo de config.
+    4. Aplica overrides de variáveis de ambiente (MIA_*).
 
     Returns:
         Config com dados mesclados.
@@ -127,6 +149,10 @@ def load_config(config_dir: str | Path | None = None) -> Config:
         config_dir = Path.home() / ".config" / "mia"
     else:
         config_dir = Path(config_dir)
+
+    # Carrega .env do projeto (raiz do cwd) para chaves não ficarem
+    # dependentes de export manual.
+    _load_dotenv(Path.cwd() / ".env")
 
     data = _DEFAULTS.copy()
 

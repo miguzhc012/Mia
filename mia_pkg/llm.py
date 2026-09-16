@@ -159,6 +159,10 @@ class OpenAICompatProvider(LLMProvider):
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}",
+                # Cloudflare bloqueia User-Agent default do urllib (erro 1010);
+                # um UA de cliente HTTP comum resolve.
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                              "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
             },
         )
 
