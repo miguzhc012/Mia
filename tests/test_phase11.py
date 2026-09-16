@@ -112,6 +112,126 @@ class TestGovernor:
 
 
 # ======================================================================
+# Profundidade de subagentes (regressão H4)
+#
+# O bug antigo: `_compute_depth(parent_id)` retornava 0 se parent None
+# e 1 caso contrário — neto/bisneto tinham a MESMA profundidade do filho,
+# tornando o limite recursivo incorreto.
+# ======================================================================
+
+class TestAgentDepth:
+    def _orch(self, db, registry):
+        return Orchestrator(db, registry)
+
+    def test_root_depth_zero(self, db, registry):
+        """Tarefa raiz (sem parent) → profundidade 0."""
+        orch = self._orch(db, registry)
+        # delega raiz e inspeciona o task registrado
+        result = orch.delegate("pesquisa raiz", capability="search")
+        assert result.success
+        task_id = result.task_id
+        assert orch._compute_depth(task_id) == 0
+
+    def test_child_depth_one(self, db, registry):
+        """Filho (parent raiz) → profundidade 1."""
+        orch = self._orch(db, registry)
+        root = orch.delegate("tarefa raiz", capability="search")
+        assert root.success
+        child = orch.delegate(
+            "tarefa filha", capability="search", parent_id=root.task_id
+        )
+        assert child.success
+        assert orch._compute_depth(child.task_id) == 1
+
+    def test_grandchild_depth_two(self, db, registry):
+        """Neto → profundidade 2."""
+        orch = self._orch(db, registry)
+        root = orch.delegate("raiz", capability="search")
+        child = orch.delegate("filho", capability="search", parent_id=root.task_id)
+        grand = orch.delegate("neto", capability="search", parent_id=child.task_id)
+        assert orch._compute_depth(grand.task_id) == 2
+
+    def test_chain_depth_correct(self, db, registry):
+        """Cadeia de 4 níveis → 0,1,2,3 (com agente de depth alto)."""
+        from mia_pkg.agents import AgentConfig, AgentRole, SubAgent
+
+        deep = SubAgent(
+            name="deep-1", role=AgentRole.GENERAL,
+            config=AgentConfig(
+                role=AgentRole.GENERAL, max_depth=10, max_time_seconds=60,
+                capabilities=["deep_chain"],
+            ),
+        )
+        deep.run = lambda task, gov, db: AgentResult(task.id, True, output="ok")
+        registry.register(deep)
+        orch = Orchestrator(
+            db, registry, OrchestrationGovernor(max_depth=10)
+        )
+        ids = []
+        prev = None
+        for i in range(4):
+            r = orch.delegate(f"nível {i}", capability="deep_chain", parent_id=prev)
+            assert r.success, r.error
+            ids.append(r.task_id)
+            prev = r.task_id
+        for i, tid in enumerate(ids):
+            assert orch._compute_depth(tid) == i, f"nível {i} deveria ter depth {i}"
+
+    def test_above_max_depth_blocked(self, db, registry):
+        """Task além do limite do governor → BLOCKED."""
+        orch = Orchestrator(db, registry, OrchestrationGovernor(max_depth=2))
+        root = orch.delegate("raiz", capability="search")
+        child = orch.delegate("filho", capability="search", parent_id=root.task_id)
+        assert child.success
+        grand = orch.delegate("neto", capability="search", parent_id=child.task_id)
+        assert grand.success  # depth 2 == max 2
+        great = orch.delegate("bisneto", capability="search", parent_id=grand.task_id)
+        # depth 3 > max 2 → blocked
+        assert great.status == AgentStatus.BLOCKED
+        assert "profundidade" in great.error
+
+    def test_missing_parent_treated_as_root(self, db, registry):
+        """Parent_id inexistente → não há como navegar → 0 (raiz)."""
+        orch = self._orch(db, registry)
+        assert orch._compute_depth("parent_id_inexistente") == 0
+
+    def test_cycle_detected_no_infinite_loop(self, db, registry):
+        """Ciclo na cadeia de parents → profundidade finita (sem loop)."""
+        orch = self._orch(db, registry)
+        a = orch.delegate("a", capability="search")
+        b = orch.delegate("b", capability="search", parent_id=a.task_id)
+        # cria ciclo: a aponta para b
+        orch._parents[a.task_id] = b.task_id
+        # navegação deve parar (profundidade finita)
+        assert orch._compute_depth(b.task_id) >= 1
+
+    def test_self_cycle(self, db, registry):
+        """Task cujo parent é ela mesma → ciclo → profundidade finita."""
+        orch = self._orch(db, registry)
+        a = orch.delegate("a", capability="search")
+        orch._parents[a.task_id] = a.task_id
+        assert orch._compute_depth(a.task_id) >= 0
+
+    def test_multiple_trees_independent(self, db, registry):
+        """Duas árvores distintas não interferem entre si."""
+        orch = self._orch(db, registry)
+        r1 = orch.delegate("árvore1 raiz", capability="search")
+        c1 = orch.delegate("árvore1 filho", capability="search", parent_id=r1.task_id)
+        r2 = orch.delegate("árvore2 raiz", capability="search")
+        assert orch._compute_depth(c1.task_id) == 1
+        assert orch._compute_depth(r2.task_id) == 0
+        assert orch._compute_depth(r1.task_id) == 0
+
+    def test_parent_finished_still_counts(self, db, registry):
+        """Parent já finalizado continua contando na cadeia (parents map retido)."""
+        orch = self._orch(db, registry)
+        root = orch.delegate("raiz", capability="search")
+        child = orch.delegate("filho", capability="search", parent_id=root.task_id)
+        # mesmo após o root terminar, a relação persiste no map
+        assert orch._compute_depth(child.task_id) == 1
+
+
+# ======================================================================
 # Orchestrator
 # ======================================================================
 

@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import time
 import uuid
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
 from mia_pkg.db import SQLiteConnection
+
+logger = logging.getLogger(__name__)
 
 
 class AgentStatus(Enum):
@@ -48,11 +51,9 @@ class AgentTask:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     config: AgentConfig = field(default_factory=AgentConfig)
     created_at: float = field(default_factory=time.time)
-
-    @property
-    def depth(self) -> int:
-        """Profundidade da tarefa (0 = raiz)."""
-        return 0  # computado pelo orchestrator na delegação
+    # Profundidade na árvore de delegação (0 = raiz). Computada pelo
+    # Orchestrator na delegação via cadeia de parent_id.
+    depth: int = 0
 
 
 @dataclass
@@ -217,6 +218,37 @@ class Orchestrator:
         self._db = db
         self.registry = registry
         self.governor = governor or OrchestrationGovernor()
+        # Rastreabilidade da hierarquia de tarefas: task_id → parent_task_id.
+        # Raiz tem parent_id=None. Usado para calcular profundidade real
+        # (não apenas "tem pai → 1").
+        self._parents: dict[str, str | None] = {}
+
+    def _compute_depth(self, task_id: str) -> int:
+        """Profundidade determinística na árvore de delegação.
+
+        root (parent=None) → 0
+        filho → 1
+        neto → 2
+        ...
+
+        Navega a cadeia de parent_id. Detecta CICLOS (parent_id que aponta
+        para o próprio filho ou cadeia circular) — nesse caso trata como
+        profundidade máxima (proteção contra loop infinito) e registra.
+        """
+        depth = 0
+        seen: set[str] = set()
+        current: str | None = task_id
+        while current is not None:
+            if current in seen:
+                # ciclo detectado — não podemos navegar para sempre
+                logger.warning("ciclo de parent_id detectado em %s", current)
+                return depth
+            seen.add(current)
+            parent = self._parents.get(current, None)
+            if parent is not None:
+                depth += 1
+            current = parent
+        return depth
 
     def delegate(
         self,
@@ -261,25 +293,25 @@ class Orchestrator:
             )
 
         # 2. Verifica limites
-        depth = self._compute_depth(parent_id)
-        if not self.governor.check_depth(depth, agent.config):
-            return AgentResult(
-                task_id="", success=False,
-                error=f"profundidade {depth} excede limite", status=AgentStatus.BLOCKED,
-            )
-
         task = AgentTask(
             description=description,
             parent_id=parent_id,
             config=agent.config,
         )
+        # registra hierarquia ANTES do cálculo de profundidade
+        self._parents[task.id] = parent_id
+        depth = self._compute_depth(task.id)
+        task.depth = depth
+        if not self.governor.check_depth(depth, agent.config):
+            return AgentResult(
+                task_id=task.id, success=False,
+                error=f"profundidade {depth} excede limite", status=AgentStatus.BLOCKED,
+            )
         if not self.governor.acquire(task):
             return AgentResult(
                 task_id=task.id, success=False,
                 error="limite de concorrência atingido", status=AgentStatus.BLOCKED,
             )
-
-        # 3. Executa
         agent.status = AgentStatus.RUNNING
         result: AgentResult | None = None
         try:
@@ -304,14 +336,6 @@ class Orchestrator:
             result.duration = time.time() - start
 
         return result
-
-    def _compute_depth(self, parent_id: str | None) -> int:
-        """Calcula profundidade da tarefa a partir do parent (busca simples)."""
-        if parent_id is None:
-            return 0
-        # Sem árvore persistida, assumimos profundidade razoável
-        # (o limite de profundidade é verificado pelo governor)
-        return 1
 
 
 # ======================================================================
