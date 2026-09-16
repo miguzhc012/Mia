@@ -100,3 +100,90 @@ class TestTraitEffects:
     def test_all_trait_ranges_valid(self):
         for trait, (lo, hi) in TRAIT_RANGES.items():
             assert 0.0 <= lo < hi <= 1.0
+
+
+# ----------------------------------------------------------------------
+# Regressão H2: primeira mudança NÃO pode ser bloqueada em processo novo.
+#
+# O bug: `_last_change.get(trait, 0.0)` tratava traço nunca-mudado como
+# "mudou no tempo 0" e `time.monotonic()` não começa em 0 → a primeira
+# mudança legítima era silenciosamente bloqueada durante os primeiros
+# MIN_INTERVAL_SECONDS (30s) do processo.
+#
+# Teste determinístico: controla o relógio via monkeypatch.
+# ----------------------------------------------------------------------
+
+class TestFirstChangeNotBlockedOnFreshProcess:
+    def test_first_change_immediately_allowed(self, db, authority, monkeypatch):
+        """Processo recém-iniciado: 1ª interação → mudança acontece."""
+        clock = {"t": 0.5}  # monotonic de processo recém-iniciado
+        monkeypatch.setattr(
+            "mia_pkg.identity_authority.time.monotonic", lambda: clock["t"]
+        )
+        changes = authority.process_interaction("novidade_encontrada")
+        assert changes, "primeira mudança legítima foi bloqueada"
+        assert any(c.trait == "openness" for c in changes)
+
+    def test_second_change_within_window_blocked(self, db, authority, monkeypatch):
+        """Após a 1ª mudança, 2ª dentro de 30s é limitada (comportamento correto)."""
+        clock = {"t": 0.5}
+        monkeypatch.setattr(
+            "mia_pkg.identity_authority.time.monotonic", lambda: clock["t"]
+        )
+        first = authority.process_interaction("novidade_encontrada")
+        assert first
+        second = authority.process_interaction("novidade_encontrada")
+        assert second == [], "2ª mudança dentro da janela deveria ser limitada"
+
+    def test_after_window_second_change_allowed(self, db, authority, monkeypatch):
+        """Após 30s+, nova mudança no mesmo traço é permitida."""
+        clock = {"t": 0.5}
+        monkeypatch.setattr(
+            "mia_pkg.identity_authority.time.monotonic", lambda: clock["t"]
+        )
+        first = authority.process_interaction("novidade_encontrada")
+        assert first
+        clock["t"] += 31.0  # passa da janela
+        second = authority.process_interaction("novidade_encontrada")
+        assert second, "mudança após a janela deveria ser permitida"
+
+    def test_multiple_traits_independent_limits(self, db, authority, monkeypatch):
+        """Traços diferentes têm limites independentes."""
+        clock = {"t": 0.5}
+        monkeypatch.setattr(
+            "mia_pkg.identity_authority.time.monotonic", lambda: clock["t"]
+        )
+        c1 = authority.process_interaction("novidade_encontrada")  # openness, curiosity
+        assert c1
+        # mesmos traços de novo → bloqueado
+        c2 = authority.process_interaction("novidade_encontrada")
+        assert c2 == []
+        # traço diferente (elogio → agreeableness) → permitido
+        clock["t"] += 0.1
+        c3 = authority.process_interaction("elogio_recebido")
+        assert c3, "traço independente não deveria ser bloqueado"
+
+    def test_reset_allows_immediate_change(self, db, authority, monkeypatch):
+        """reset_limits zera o rate limit — próxima mudança imediata."""
+        clock = {"t": 0.5}
+        monkeypatch.setattr(
+            "mia_pkg.identity_authority.time.monotonic", lambda: clock["t"]
+        )
+        authority.process_interaction("novidade_encontrada")
+        authority.reset_limits()
+        changes = authority.process_interaction("novidade_encontrada")
+        assert changes
+
+    def test_fresh_authority_after_persisted_change(self, db, authority, monkeypatch):
+        """Restart de processo (nova instância) com histórico já persistido:
+        o rate limit é por-instância (process-local), a primeira mudança
+        da nova instância é permitida."""
+        clock = {"t": 0.5}
+        monkeypatch.setattr(
+            "mia_pkg.identity_authority.time.monotonic", lambda: clock["t"]
+        )
+        authority.process_interaction("novidade_encontrada")
+        # nova instância = novo processo (mesmo DB)
+        authority2 = IdentityAuthority(db)
+        changes = authority2.process_interaction("novidade_encontrada")
+        assert changes, "nova instância não deveria herdar rate limit de processo antigo"

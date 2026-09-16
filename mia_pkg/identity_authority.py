@@ -84,13 +84,16 @@ class IdentityAuthority:
         if not effects:
             return []
 
-        # Rate limit: por traço, respeita intervalo mínimo
+        # Rate limit: por traço, respeita intervalo mínimo.
+        # Usa sentinela None: traço que NUNCA mudou não pode ser
+        # bloqueado como se tivesse mudado no tempo 0 (primeira
+        # mudança legítima acontece imediatamente).
         now = time.monotonic()
         changes: list[PersonalityChange] = []
         for trait, delta in effects.items():
-            last = self._last_change.get(trait, 0.0)
-            if now - last < self.MIN_INTERVAL_SECONDS:
-                continue  # muda muito rápido demais
+            last = self._last_change.get(trait)
+            if last is not None and now - last < self.MIN_INTERVAL_SECONDS:
+                continue  # muda rápido demais (2ª+ mudança dentro da janela)
 
             applied = self._adjust_trait(trait, delta, event)
             if applied:
