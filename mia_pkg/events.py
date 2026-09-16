@@ -47,6 +47,11 @@ class EventType(str, Enum):
     TASK_COMPLETED = "task_completed"
     # Memory
     NEW_MEMORY_CANDIDATE = "new_memory_candidate"
+    MEMORY_CREATED = "memory_created"
+    # Relationship / Personality / Emotion
+    RELATIONSHIP_UPDATED = "relationship_updated"
+    PERSONALITY_CHANGED = "personality_changed"
+    EMOTION_CHANGED = "emotion_changed"
     # Internal
     LONELINESS_CHANGED = "loneliness_changed"
     CURIOSITY_TRIGGERED = "curiosity_triggered"
@@ -67,13 +72,26 @@ class EventType(str, Enum):
 
 @dataclass
 class Event:
-    """Evento tipado conforme contrato D.1."""
+    """Evento tipado conforme contrato D.1.
+
+    Provenance (H15):
+      - id: identificador único do evento
+      - correlation_id: identifica o FLUXO/sessão que gerou o evento
+        (vários eventos do mesmo fluxo compartilham o mesmo correlation_id)
+      - causation_id: id do evento QUE CAUSOU este (parent), se houver
+    """
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     type: EventType = EventType.MIGUEL_SPOKE
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     source: str = ""  # componente que emitiu
     schema_version: int = 1
     payload: dict[str, Any] = field(default_factory=dict)
+    correlation_id: str | None = None
+    causation_id: str | None = None
+
+
+class EventRejectedError(Exception):
+    """Evento rejeitado: tipo inválido ou circuito aberto para o produtor."""
 
 
 # ======================================================================
@@ -132,40 +150,55 @@ class EventBus:
             if subscription_id in self._handler_count:
                 del self._handler_count[subscription_id]
 
-    def emit(self, event: Event) -> None:
+    def emit(self, event: Event) -> bool:
         """Dispara evento síncronamente.
 
-        Valida schema mínimo (type obrigatório). Rejeita eventos inválidos.
+        Contrato de falha (H16):
+          - evento com type inválido → levanta EventRejectedError
+            (o caller PRECISA saber que falhou)
+          - circuito aberto para (source, type) → levanta EventRejectedError
+          - handler com erro → contabiliza falha; os demais handlers do
+            mesmo evento ainda recebem o evento; o erro não é silencioso
+            (logger.exception)
+          - retorna True se TODOS os handlers sucederam; False se algum
+            handler falhou (caller pode distinguir falha de ausência)
+
+        Circuit breaker é por (source + event_type): um produtor com
+        falhas num tipo NÃO fica bloqueado para outros tipos legítimos.
         """
         if not isinstance(event.type, EventType):
-            logger.warning("Evento rejeitado: type inválido: %s", event.type)
-            return
+            raise EventRejectedError(f"type inválido: {event.type!r}")
 
         etype = event.type.value
         handlers = self._subscribers.get(etype, [])
 
+        # circuit breaker por (source, type)
+        cb_key = f"{event.source}:{etype}"
+        if self._error_counts.get(cb_key, 0) >= self._circuit_breaker_threshold:
+            raise EventRejectedError(
+                f"circuit breaker aberto para {cb_key} "
+                f"({self._error_counts[cb_key]} erros consecutivos)"
+            )
+
         if not handlers:
             logger.debug("Nenhum subscriber para %s", etype)
-            return
+            return True  # nada para entregar — não é falha
 
-        # Verifica circuit breaker por source
-        if self._error_counts.get(event.source, 0) >= self._circuit_breaker_threshold:
-            logger.warning(
-                "Circuit breaker ativo para '%s' — evento ignorado.", event.source
-            )
-            return
-
+        all_ok = True
         for sub_id, handler in handlers:
             try:
                 handler(event)
                 self._handler_count[sub_id] = self._handler_count.get(sub_id, 0) + 1
             except Exception:
-                self._error_counts[event.source] = (
-                    self._error_counts.get(event.source, 0) + 1
-                )
+                self._error_counts[cb_key] = self._error_counts.get(cb_key, 0) + 1
+                all_ok = False
                 logger.exception(
                     "Erro ao entregar evento %s para handler %s", etype, sub_id
                 )
+        if all_ok:
+            # todos os handlers sucederam → circuito limpo
+            self._error_counts.pop(cb_key, None)
+        return all_ok
 
     def subscriber_count(self, event_type: EventType | str) -> int:
         """Retorna quantos subscribers existem para um tipo."""

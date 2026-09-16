@@ -14,7 +14,7 @@ from pathlib import Path
 
 from mia_pkg.config import Config, load_config
 from mia_pkg.db import SQLiteConnection
-from mia_pkg.events import Event, EventBus, EventType
+from mia_pkg.events import EventRejectedError, Event, EventBus, EventType
 from mia_pkg.memory import MemoryObject, MemoryStore, MemoryType, MemoryScope
 from mia_pkg.policy_engine import PolicyEngine, StateTransitionProposal
 from mia_pkg.state_authority import StateAuthority, TransitionResult
@@ -113,14 +113,14 @@ class TestEventBus(unittest.TestCase):
         self.assertEqual(count_b[0], 1)
 
     def test_invalid_event_type_rejected(self) -> None:
-        """Evento com type inválido é rejeitado silenciosamente."""
+        """Evento com type inválido é rejeitado com exceção (caller sabe)."""
         received: list[Event] = []
         self.bus.subscribe(EventType.MIGUEL_SPOKE, lambda e: received.append(e))
 
-        # Cria evento com type inválido (não é EventType)
         event = Event()
         event.type = "tipo_invalido"  # type: ignore[assignment]
-        self.bus.emit(event)
+        with self.assertRaises(EventRejectedError):
+            self.bus.emit(event)
 
         self.assertEqual(len(received), 0)
 
@@ -129,33 +129,36 @@ class TestEventBus(unittest.TestCase):
         self.bus.emit(Event(type=EventType.MIGUEL_SPOKE, source="cli"))
 
     def test_circuit_breaker(self) -> None:
-        """Circuit breaker isola produtor após erros consecutivos.
+        """Circuit breaker isola (source, type) após erros consecutivos.
 
-        O circuit breaker é por produtor (source). Após threshold de erros,
-        o produtor é isolado e nenhum handler recebe seus eventos.
+        O circuito conta erros por (source + event_type): falhas num tipo
+        NÃO bloqueiam eventos legítimos de outro tipo do mesmo produtor.
+        Após o limite, o emit levanta EventRejectedError.
         """
         bus = EventBus(circuit_breaker_threshold=2)
         received: list[Event] = []
+        other_type_received: list[Event] = []
 
         def bad_handler(event: Event) -> None:
             raise RuntimeError("falha simulada")
 
         bus.subscribe(EventType.MIGUEL_SPOKE, bad_handler)
         bus.subscribe(EventType.MIGUEL_SPOKE, lambda e: received.append(e))
+        bus.subscribe(EventType.STATE_CHANGED, lambda e: other_type_received.append(e))
 
         # 2 emits → 2 erros no bad_handler + 2 entregas no good_handler
         bus.emit(Event(type=EventType.MIGUEL_SPOKE, source="bad_producer"))
         bus.emit(Event(type=EventType.MIGUEL_SPOKE, source="bad_producer"))
-        self.assertEqual(len(received), 2)  # good handler recebeu nos primeiros 2
+        self.assertEqual(len(received), 2)
 
-        # 3º emit → circuit breaker ativo, NENHUM handler chamado
-        bus.emit(Event(type=EventType.MIGUEL_SPOKE, source="bad_producer"))
+        # 3º emit → circuito aberto, levanta rejeição
+        with self.assertRaises(EventRejectedError):
+            bus.emit(Event(type=EventType.MIGUEL_SPOKE, source="bad_producer"))
         self.assertEqual(len(received), 2)  # não aumentou
 
-
-# ======================================================================
-# StateAuthority
-# ======================================================================
+        # evento de OUTRO tipo do MESMO produtor continua funcionando
+        bus.emit(Event(type=EventType.STATE_CHANGED, source="bad_producer"))
+        self.assertEqual(len(other_type_received), 1)
 
 class TestStateAuthority(unittest.TestCase):
     """Testes da StateAuthority — o componente mais crítico."""
