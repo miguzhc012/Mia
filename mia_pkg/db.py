@@ -117,7 +117,8 @@ class SQLiteConnection:
 _SCHEMA_SQL = """
 -- memory_objects
 CREATE TABLE IF NOT EXISTS memory_objects (
-    id TEXT PRIMARY KEY,
+    id TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
     content TEXT NOT NULL,
     type TEXT NOT NULL CHECK(type IN ('experience','preference','fact','belief','emotion','relationship','decision')),
     source TEXT NOT NULL,
@@ -134,11 +135,11 @@ CREATE TABLE IF NOT EXISTS memory_objects (
     status TEXT DEFAULT 'active',
     revision_history TEXT,
     observed_at TEXT,
-    version INTEGER NOT NULL DEFAULT 1,
     is_consolidated INTEGER NOT NULL DEFAULT 0,
     access_count INTEGER NOT NULL DEFAULT 0,
     last_accessed_at TEXT,
-    tags TEXT DEFAULT '[]'
+    tags TEXT DEFAULT '[]',
+    PRIMARY KEY (id, version)
 );
 CREATE INDEX IF NOT EXISTS idx_memory_type ON memory_objects(type);
 CREATE INDEX IF NOT EXISTS idx_memory_importance ON memory_objects(importance DESC);
@@ -147,8 +148,8 @@ CREATE INDEX IF NOT EXISTS idx_memory_person ON memory_objects(person_id);
 
 -- memory_associations
 CREATE TABLE IF NOT EXISTS memory_associations (
-    memory_id TEXT NOT NULL REFERENCES memory_objects(id),
-    associated_id TEXT NOT NULL REFERENCES memory_objects(id),
+    memory_id TEXT NOT NULL,
+    associated_id TEXT NOT NULL,
     strength REAL NOT NULL DEFAULT 0.5,
     created_at TEXT NOT NULL,
     PRIMARY KEY (memory_id, associated_id)

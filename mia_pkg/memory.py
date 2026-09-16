@@ -153,46 +153,113 @@ class MemoryStore:
     def get(self, obj_id: str) -> MemoryObject | None:
         """Recupera uma memória por ID."""
         row = self._db.fetchone(
-            "SELECT * FROM memory_objects WHERE id = ?", (obj_id,)
+            "SELECT * FROM memory_objects WHERE id = ? ORDER BY version DESC LIMIT 1",
+            (obj_id,),
         )
         return self._row_to_obj(row) if row else None
 
     def update(self, obj: MemoryObject) -> MemoryObject:
-        """Atualiza uma memória."""
+        """Cria NOVA VERSÃO da memória (protocolo imutável/versionado).
+
+        A arquitetura define Memory Objects como imutáveis/versionados:
+        mudanças criam v2, v3... A versão anterior permanece no banco
+        (recuperável via get_version). O id do objeto NÃO muda — apenas
+        a linha com version incrementado é adicionada.
+        """
+        # carrega versão atual para preservar created_at e histórico
+        current = self.get(obj.id)
+        base_created = current.created_at if current else obj.created_at
+        new_version = (current.version if current else obj.version) + 1
+
+        # registra revisão anterior no histórico (se ainda não registrada)
+        history = current.revision_history if current else None
+        if isinstance(history, str):
+            try:
+                history_list = json.loads(history)
+            except (json.JSONDecodeError, ValueError):
+                history_list = []
+        elif isinstance(history, list):
+            # já deserializado por _row_to_obj — usa direto
+            history_list = list(history)
+        else:
+            history_list = []
+        prev = {
+            "version": (current.version if current else obj.version),
+            "changed_at": current.updated_at if current else obj.updated_at,
+            "importance": current.importance if current else obj.importance,
+            "content": current.content if current else obj.content,
+        }
+        # evita duplicação no histórico (se a revisão já foi registrada)
+        if not any(h.get("version") == prev["version"] for h in history_list):
+            history_list.append(prev)
+        history_json = json.dumps(history_list)
+
+        new_obj = MemoryObject(
+            id=obj.id,
+            content=obj.content,
+            type=obj.type,
+            source=obj.source,
+            created_at=base_created,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+            importance=obj.importance,
+            confidence=obj.confidence,
+            scope=obj.scope,
+            person_id=obj.person_id,
+            embedding=obj.embedding,
+            emotional_context=obj.emotional_context,
+            provenance=obj.provenance,
+            decay_state=obj.decay_state,
+            status=obj.status,
+            revision_history=history_json,
+            observed_at=obj.observed_at,
+            version=new_version,
+            is_consolidated=obj.is_consolidated,
+            access_count=obj.access_count,
+            last_accessed_at=obj.last_accessed_at,
+            tags=obj.tags,
+        )
         self._db.execute(
-            """UPDATE memory_objects
-               SET content = ?, type = ?, source = ?, created_at = ?, updated_at = ?, importance = ?,
-                confidence = ?, scope = ?, person_id = ?, embedding = ?, emotional_context = ?,
-                provenance = ?, decay_state = ?, status = ?, revision_history = ?, observed_at = ?,
-                version = ?, is_consolidated = ?, access_count = ?, last_accessed_at = ?, tags = ?
-               WHERE id = ?""",
+            """INSERT INTO memory_objects
+              (id, content, type, source, created_at, updated_at, importance, confidence,
+               scope, person_id, embedding, emotional_context, provenance, decay_state,
+               status, revision_history, observed_at, version, is_consolidated,
+               access_count, last_accessed_at, tags)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                obj.content,
-                obj.type,
-                obj.source,
-                obj.created_at,
-                obj.updated_at,
-                obj.importance,
-                obj.confidence,
-                obj.scope,
-                obj.person_id,
-                obj.embedding,
-                obj.emotional_context,
-                obj.provenance,
-                obj.decay_state,
-                obj.status,
-                obj.revision_history,
-                obj.observed_at,
-                obj.version,
-                obj.is_consolidated,
-                obj.access_count,
-                obj.last_accessed_at,
-                obj.tags,
-                obj.id,
+                new_obj.id, new_obj.content, new_obj.type, new_obj.source,
+                new_obj.created_at, new_obj.updated_at, new_obj.importance,
+                new_obj.confidence, new_obj.scope, new_obj.person_id,
+                json.dumps(new_obj.embedding) if new_obj.embedding else None,
+                json.dumps(new_obj.emotional_context) if new_obj.emotional_context else None,
+                json.dumps(new_obj.provenance) if new_obj.provenance else None,
+                new_obj.decay_state, new_obj.status,
+                new_obj.revision_history, new_obj.observed_at, new_obj.version,
+                new_obj.is_consolidated, new_obj.access_count, new_obj.last_accessed_at,
+                json.dumps(new_obj.tags) if new_obj.tags else None,
             ),
         )
         self._db.commit()
-        return obj
+        return new_obj
+
+    def get_version(self, obj_id: str, version: int) -> MemoryObject | None:
+        """Recupera uma versão específica da memória (v1, v2, ...)."""
+        rows = self._db.fetchall(
+            "SELECT * FROM memory_objects WHERE id = ? ORDER BY version DESC",
+            (obj_id,),
+        )
+        for r in rows:
+            if r["version"] == version:
+                return self._row_to_obj(r)
+        return None
+
+    def list_versions(self, obj_id: str) -> list[dict[str, Any]]:
+        """Lista versões existentes (ordem decrescente)."""
+        rows = self._db.fetchall(
+            "SELECT id, version, updated_at, importance FROM memory_objects "
+            "WHERE id = ? ORDER BY version DESC",
+            (obj_id,),
+        )
+        return rows
 
     def delete(self, obj_id: str) -> None:
         """Remove uma memória."""
@@ -210,25 +277,23 @@ class MemoryStore:
         return MemoryRetrieval(query=query, results=results)
 
     def update_importance(self, obj_id: str, importance: float) -> bool:
-        """Atualiza a importância de uma memória. False se inválida ou inexistente."""
+        """Altera a importância criando NOVA VERSÃO (protocolo imutável).
+
+        False se inválida ou inexistente. A versão anterior permanece
+        recuperável via get_version.
+        """
         if not (0.0 <= importance <= 1.0):
             return False
         row = self._db.fetchone(
-            "SELECT id FROM memory_objects WHERE id = ?", (obj_id,)
+            "SELECT * FROM memory_objects WHERE id = ? ORDER BY version DESC",
+            (obj_id,),
         )
         if not row:
             return False
-        self._db.execute(
-            "UPDATE memory_objects SET importance = ?, updated_at = ? WHERE id = ?",
-            (
-                importance,
-                datetime.now(timezone.utc).isoformat(),
-                obj_id,
-            ),
-        )
-        self._db.commit()
+        cur = self._row_to_obj(row)
+        cur.importance = importance
+        self.update(cur)  # cria v+1 com a nova importância
         return True
-
     def list_by_importance(self, limit: int = 10) -> list[MemoryObject]:
         """Lista memórias por importância (descendente)."""
         rows = self._db.fetchall(
