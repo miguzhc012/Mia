@@ -298,8 +298,13 @@ rule-based por não haver chave de API no `.env`).
 
 ## 7. Recomendações (roadmap)
 
-1. **Integrar LLM real** (Groq/HF/OpenRouter) — chave em `.env` → conversa
-   natural em vez de regras. HOJE é o maior limitador de qualidade percebida.
+1. ~~Integrar LLM real~~ **FEITO (16/09):** gateway OmniRoute
+   (`https://omniroute.riopelicula.com.br/v1`, modelo `auto/best-chat`)
+   configurado em `~/.config/mia/config.yaml` + `.env` (gitignored).
+   Mia conversa naturalmente: 5 turnos reais testados (identidade,
+   empatia, conhecimento técnico sobre Rust, acolhimento de estresse).
+   Fix necessário: User-Agent browser no provider (Cloudflare 1010) +
+   `_load_dotenv` no config.
 2. **Voz real**: Whisper STT + edge-tts/piper (grátis, local, sem nuvem).
 3. **Visão real**: modelo multimodal local (LLaVA etc.) para analyze_fn.
 4. **Deploy distribuído**: VPS como master, PC/mobile como clients — já
