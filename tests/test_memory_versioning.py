@@ -12,7 +12,8 @@ def store(tmp_path):
     db = SQLiteConnection(tmp_path / "mem.db")
     db.connect()
     db.init_schema()
-    return MemoryStore(db)
+    yield MemoryStore(db)
+    db.close()
 
 
 def _obj(content="v1", importance=0.5):
