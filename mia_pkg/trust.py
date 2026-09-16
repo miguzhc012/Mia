@@ -40,9 +40,33 @@ class ComponentKind(str, Enum):
 class Component:
     name: str
     kind: ComponentKind
-    token: str = field(default_factory=lambda: secrets.token_hex(16))
     can_mutate_state: bool = False
-    can_mutate_trust: bool = False   # NUNCA True para adaptive
+    can_mutate_trust: bool = False   # NUNCA True para adaptive (enforced no register)
+    _token: str = field(
+        default_factory=lambda: secrets.token_hex(16),
+        repr=False,
+        compare=False,
+    )
+
+    @property
+    def token(self) -> str:
+        """Acesso controlado ao token (não aparece em repr/logs).
+
+        Nota (threat model): em Python puro, `vars(obj)`/`obj.__dict__`
+        e `dataclasses.asdict(obj)` sempre expõem atributos privados —
+        quem tem a referência do objeto tem tudo. A proteção real é NÃO
+        serializar/logar o objeto inteiro; use `public_dict()` para isso.
+        """
+        return self._token
+
+    def public_dict(self) -> dict[str, Any]:
+        """Serialização segura: NUNCA inclui o token."""
+        return {
+            "name": self.name,
+            "kind": self.kind.value,
+            "can_mutate_state": self.can_mutate_state,
+            "can_mutate_trust": self.can_mutate_trust,
+        }
 
 
 class ComponentRegistry:
@@ -67,6 +91,18 @@ class ComponentRegistry:
         can_mutate_state: bool = False,
         can_mutate_trust: bool = False,
     ) -> Component:
+        """Registra componente, fazendo cumprir as invariantes de trust.
+
+        - ADAPTIVE: NUNCA pode mutar trust; pode mutar estado apenas
+          se explicitamente autorizado (default False).
+        - EXTERNAL: NUNCA pode mutar estado nem trust (entrada não
+          confiável).
+        - CORE: pode mutar ambos se autorizado (authority).
+        """
+        if kind == ComponentKind.ADAPTIVE and can_mutate_trust:
+            raise ValueError("ADAPTIVE nunca pode mutar trust")
+        if kind == ComponentKind.EXTERNAL and (can_mutate_state or can_mutate_trust):
+            raise ValueError("EXTERNAL nunca pode mutar estado nem trust")
         with self._lock:
             if name in self._components:
                 raise ValueError(f"componente já registrado: {name}")
@@ -107,16 +143,31 @@ class KillSwitch:
       - `is_blocked()` → True (todos os consumidores consultam)
       - `block()` / `unblock()` — apenas via autoridade (owner token)
 
-    Não é uma promessa em documentação: qualquer código que DEVE parar
-    consulta `is_blocked()` antes de agir.
+    Definição de falha: `block()`/`unblock()` SÓ funcionam com o token
+    do owner. O token DEVE ser fornecido na construção (chave gerada
+    pelo operador e guardada fora do processo) — se `owner_token` for
+    None, não há token válido e operações autenticadas são impossíveis
+    (fail-closed: ninguém desbloqueia sem a chave real).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, owner_token: str) -> None:
+        if not isinstance(owner_token, str):
+            raise TypeError("owner_token deve ser str, não {}".format(type(owner_token).__name__))
         self._blocked = False
         self._lock = threading.Lock()
         self._history: list[dict[str, Any]] = []
+        self.__owner_token: str = owner_token
 
-    def block(self, reason: str, by: str = "operator") -> None:
+    def _assert_owner(self, token: str) -> None:
+        if not isinstance(token, str):
+            raise KillSwitchAuthError(
+                "token deve ser str, não {}".format(type(token).__name__)
+            )
+        if not secrets.compare_digest(self.__owner_token, token):
+            raise KillSwitchAuthError("kill switch exige token do owner")
+
+    def block(self, reason: str, by: str = "operator", token: str = "") -> None:
+        self._assert_owner(token)
         with self._lock:
             self._blocked = True
             self._history.append({
@@ -126,7 +177,8 @@ class KillSwitch:
                 "at": datetime.now(timezone.utc).isoformat(),
             })
 
-    def unblock(self, by: str = "operator") -> None:
+    def unblock(self, by: str = "operator", token: str = "") -> None:
+        self._assert_owner(token)
         with self._lock:
             self._blocked = False
             self._history.append({
@@ -142,6 +194,10 @@ class KillSwitch:
     def history(self) -> list[dict[str, Any]]:
         with self._lock:
             return list(self._history)
+
+
+class KillSwitchAuthError(Exception):
+    """Token inválido ou ausente ao operar o kill switch."""
 
 
 class ReadOnlyMode:
@@ -196,7 +252,6 @@ class IntegrityChecker:
 
     - `snapshot(content)`: registra hash do estado
     - `verify(content)`: compara com o último hash registrado
-    - `corrupt()`: detecta divergência
     """
 
     def __init__(self) -> None:
@@ -213,8 +268,3 @@ class IntegrityChecker:
         h = hashlib.sha256(content.encode()).hexdigest()
         with self._lock:
             return self._last_hash is not None and h == self._last_hash
-
-    def corrupt(self) -> bool:
-        with self._lock:
-            self._last_hash = None
-        return True
