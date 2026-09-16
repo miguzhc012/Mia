@@ -1,11 +1,11 @@
-# MIA — AGENT ONBOARDING & PROJECT CONTEXT (v2)
+# MIA — AGENT ONBOARDING & PROJECT CONTEXT (v2.1)
 
 ## Documento de Entrada Obrigatória para Agentes e IAs
 
-> **Versão:** 2.0 — Correção arquitetural
+> **Versão:** 2.1 — Correção arquitetural completa (25 pontos)
 > **Data:** 2026-09-15  
-> **Status:** Após análise multi-agente (Hermes + Claude Code)
-> **Mudanças:** State Authority definida, Trust Boundary formalizada, Budget Authority adicionada, hierarquia atualizada, telemetria classificada como experimento, concorrência e procedência formalizadas.
+> **Status:** Após análise multi-agente — correções aplicadas
+> **Mudanças v2.1:** Telemetria psicológica removida; State Authority = DECISÃO (determinística, ADR-003/007); LLM role formalizado; AUTHORITY vs PRECEDENCE distinguidos; Regra de conflito com exemplos; Trust Boundary fora da autoridade adaptativa; Self-Modification ≠ Architecture Governance; Resource & Budget Authority formalizada; Limites recursivos definidos; Relationship(subject, target) abstração; Sexualidade/ofensa contextual; Emotion/Sensation/Need/Desire/Goal tabela; MemoryObject schema; Beliefs com confidence/revision; Attention/Initiative Policy explícita; Voice = LONG-TERM; Concorrência/consistência; Event provenance; Auditoria operacional ≠ telemetria; ADR governance; Classificação obrigatória; Conceito/Arquitetura/Implementação distinguidos; Evitar excesso de infraestrutura.
 
 Você está entrando em um projeto experimental de engenharia de software chamado **Mia**.
 
@@ -573,55 +573,48 @@ A evolução deve considerar múltiplos fatores:
 * necessidades sociais;
 * contexto temporal.
 
-### 11.1 OBSERVABILIDADE EXPERIMENTAL
+### 11.1 OBSERVABILIDADE OPERACIONAL (NÃO TELEMETRIA PSICOLÓGICA)
 
-Como esse é um experimento, a evolução desses estados precisa ser observável externamente para fins de engenharia e pesquisa.
+A evolução desses estados experimentais **não requer infraestrutura dedicada de séries temporais** (como `attachment_timeseries`, `social_needs_timeseries`, `emotion_timeseries`).
 
-O sistema deve registrar, de maneira apropriada:
+A observabilidade necessária é coberta pela infraestrutura operacional padrão:
 
-* estado anterior;
-* novo estado;
-* timestamp;
-* evento/contexto;
-* intensidade;
-* razão calculada;
-* fonte da atualização;
-* versão do mecanismo.
+* **Audit log** — transições de estado críticas (incluindo mudanças de apego/solidão quando relevantes para integridade)
+* **Event provenance** — eventos com `event_id`, `correlation_id`, `causation_id` para rastreabilidade
+* **Logging operacional** — erros, warnings, mudanças de configuração
+* **Memory provenance** — origem e confiança de memórias relacionadas
 
-### 11.2 FIREWALL DE RETENÇÃO
+Não criar:
+* dashboards de emoções/apego/solidão;
+* armazenamento contínuo de trajetória afetiva dedicado;
+* métricas psicológicas como requisito de sistema;
+* infraestrutura de séries temporais para estados internos.
 
-A telemetria experimental NÃO deve:
+A distinção fundamental:
 
-* vazar automaticamente para a interface do usuário;
-* ser exibida como "pensamentos internos" da Mia;
-* crescer infinitamente (retenção limitada);
-* ser confundida com logs operacionais ou auditoria.
+**OBSERVABILIDADE OPERACIONAL** (logs, auditoria, provenance, debugging, rollback) ≠ **TELEMETRIA PSICOLÓGICA EXPERIMENTAL** (séries temporais dedicadas de apego, solidão, emoções, sensações).
 
-### 11.3 DISTINÇÃO IMPORTANTE
-
-OBSERVABILIDADE OPERACIONAL ≠ TELEMETRIA PSICOLÓGICA EXPERIMENTAL
-
-Os mecanismos abaixo continuam existindo como infraestrutura normal de software:
-
-* logs de erro;
-* logs operacionais;
-* auditoria de ações críticas;
-* histórico necessário para debugging;
-* histórico necessário para rollback;
-* provenance necessário para memória;
-* registros de mudanças arquiteturais.
+Os primeiros são infraestrutura de software obrigatória. Os segundos **não são requisito** deste projeto.
 
 # 12. RELACIONAMENTOS — ESCOPO INICIAL
 
 A arquitetura social deve suportar entidades humanas e sociais.
 
+**ABSTRAÇÃO BASE:**
+
+**Relationship(subject, target)** — relação direcionada entre duas entidades.
+
+Não hardcodar: `relationship = Miguel`.
+
+A estrutura genérica permite que qualquer entidade (humana, artificial, grupo) seja subject ou target.
+
 Entretanto, para o escopo inicial experimental:
 
 ## Miguel
 
-Miguel possui o modelo relacional completo.
+Miguel possui o modelo relacional completo como **target** principal.
 
-Esse relacionamento pode incluir:
+Esse relacionamento (Mia → Miguel) pode incluir:
 
 * familiaridade;
 * confiança;
@@ -643,7 +636,7 @@ Esse relacionamento pode incluir:
 
 ## Outras pessoas
 
-Outras pessoas podem existir como:
+Outras pessoas podem existir como **targets** com modelo relacional simplificado:
 
 * entidades conhecidas;
 * pessoas reconhecidas;
@@ -652,9 +645,9 @@ Outras pessoas podem existir como:
 * vozes/rostos identificados;
 * pessoas sobre as quais a Mia possui informações.
 
-Na primeira arquitetura, essas pessoas NÃO precisam automaticamente possuir todas as dimensões completas do modelo relacional de Miguel.
+Na primeira arquitetura, esses targets NÃO precisam automaticamente possuir todas as dimensões completas do modelo relacional de Miguel.
 
-A estrutura deve, entretanto, permitir que relacionamentos completos sejam ativados no futuro.
+A estrutura **Relationship(subject, target)** deve, entretanto, permitir que relacionamentos completos sejam ativados para qualquer target no futuro.
 
 Não projetar o sistema de forma que essa expansão fique impossível.
 
@@ -1088,28 +1081,63 @@ event
 
 ---
 
-# 26. ATENÇÃO E INICIATIVA
+# 26. ATENÇÃO E INICIATIVA — ATTENTION / INITIATIVE POLICY
 
-A Mia deve decidir:
+CLASSIFICAÇÃO: **REQUIREMENT**
 
-ACT
-WAIT
-IGNORE.
+A Mia deve possuir uma **Attention / Initiative Policy** explícita, extensível e configurável.
 
-A decisão pode considerar:
+Ela recebe eventos e avalia para decidir:
 
-* urgência;
-* relevância;
-* importância;
-* curiosidade;
-* relação com Miguel;
-* disponibilidade;
-* hora;
-* contexto social;
-* estado interno;
-* objetivos.
+**ACT** — agir agora (responder, iniciar tarefa, notificar)
+**WAIT** — aguardar (reavaliar depois, enfileirar)
+**IGNORE** — descartar (não relevante, abaixo do threshold)
 
-Ela deve poder decidir não interromper.
+### 26.1 FATORES DE AVALIAÇÃO (ENTRADAS)
+
+A policy deve considerar, no mínimo:
+
+* **relevance** — quão relevante o evento é para objetivos/estado atual
+* **urgency** — sensibilidade temporal (ex: mensagem de Miguel vs news digest)
+* **importance** — impacto potencial no estado/relacionamentos/objetivos
+* **context** — contexto social, ambiental, conversacional
+* **current_activity** — o que a Mia está fazendo agora (foco, reflexão, idle)
+* **user_availability** — Miguel está disponível? Ocupado? Ausente?
+* **social_setting** — público, privado, íntimo, profissional
+* **internal_state** — emoções, sensações, necessidades, nível de energia
+* **goals** — objetivos ativos e suas prioridades
+* **curiosity** — potencial de aprendizado/descoberta
+* **relationship** — quem é a fonte, qual o histórico
+
+### 26.2 SAÍDAS MÍNIMAS
+
+* **ACT** — executar ação (pode incluir: responder, iniciar subagente, criar memória, notificar)
+* **WAIT** — reavaliar em N segundos/minutos; pode virar ACT ou IGNORE
+* **IGNORE** — nenhum processamento adicional; opcionalmente logar para análise posterior
+
+### 26.3 EXTENSIBILIDADE
+
+A policy **não** deve ser um simples `if important: act`.
+
+Deve ser:
+* configurável (regras declarativas, não hardcoded);
+* extensível (novos fatores, novas ações);
+* versionada (mudanças de policy são auditáveis);
+* testável (dado evento X + estado Y → decisão Z esperada).
+
+### 26.4 EXEMPLO CONCEITUAL
+
+Evento: "Miguel mencionou projeto X"
+→ relevance: 0.9 (objetivo ativo)
+→ urgency: 0.3 (não é emergência)
+→ importance: 0.8 (relacionamento + objetivo)
+→ current_activity: "reflexão"
+→ decision: **WAIT** (aguardar fim da reflexão, depois ACT)
+
+Evento: "Erro crítico no deployment"
+→ urgency: 1.0
+→ importance: 1.0
+→ decision: **ACT** (interrompe tudo, notifica, inicia rollback)
 
 ---
 
@@ -1410,6 +1438,32 @@ Ela pode até automatizar o processo.
 
 Mas o mecanismo que protege as invariantes não pode depender exclusivamente de uma regra que a própria Mia concorda em obedecer.
 
+### 36.1 SELF-MODIFICATION vs ARCHITECTURE GOVERNANCE
+
+**DISTINÇÃO OBRIGATÓRIA:**
+
+**CODE CHANGE** — modificação de implementação (ex: otimizar uma função, corrigir bug, ajustar parâmetros, adicionar ferramenta).
+
+**ARCHITECTURE CHANGE** — mudança de contrato, responsabilidade, dependência ou estrutura arquitetural (ex: alterar interface de State Authority, modificar hierarquia de autoridade, adicionar/remover componente com autoridade, mudar schema de evento).
+
+Uma **architecture change** deve **sempre** gerar uma proposta/ADR formal, passar por revisão, e ser aprovada antes de implementação.
+
+Isso vale **inclusive quando a proposta foi criada pela própria Mia**.
+
+A Mia pode:
+* propor architecture changes (via ADR proposal);
+* implementar code changes em ambiente permitido;
+* testar e validar code changes;
+* executar canary de code changes;
+* solicitar deploy de code changes aprovados.
+
+A Mia **NÃO PODE**:
+* fazer deploy de architecture changes sem ADR aprovado;
+* modificar contratos de interface sem ADR;
+* alterar a hierarquia de autoridade (Section 39) sem ADR;
+* remover ou contornar a Trust Boundary;
+* modificar invariantes (Section 38) sem ADR e aprovação externa.
+
 ---
 
 # 37. AUTO-DEPLOY
@@ -1525,39 +1579,57 @@ Esta decisão está formalizada em ADR-003 (aceito) e ADR-007.
 * Como validar transições complexas?
 * Como tratar inconsistências entre estados?
 
-# 41. TELEMETRIA E OBSERVABILIDADE
+# 41. OBSERVABILIDADE OPERACIONAL (NÃO TELEMETRIA PSICOLÓGICA)
 
-Estados internos importantes precisam ser observáveis externamente para fins de engenharia e pesquisa.
+CLASSIFICAÇÃO: **REQUIREMENT**
 
-Devem existir mecanismos para analisar:
+A distinção fundamental:
 
-* mudanças de emoção;
-* mudanças de sensação;
-* apego;
-* dependência;
-* solidão;
-* confiança;
-* personalidade;
-* valores;
-* objetivos;
-* memória;
-* decisões;
-* eventos;
-* custos;
-* uso de agentes;
-* evolução do sistema.
+**OBSERVABILIDADE OPERACIONAL** ≠ **TELEMETRIA PSICOLÓGICA EXPERIMENTAL**
 
-Telemetria não deve significar entregar automaticamente todos os pensamentos internos ou informações privadas à interface do usuário.
+### 41.1 OBSERVABILIDADE OPERACIONAL (OBRIGATÓRIA)
 
-Devem existir distinções entre:
+Infraestrutura padrão de software que deve existir:
 
-* runtime log;
-* audit log;
-* telemetry;
-* internal state;
-* diary;
-* model-visible context;
-* administrator-visible data.
+* **Audit log** — mudanças de estado críticas, alterações arquiteturais, self-modification, deploy, permission changes, tool execution de alto risco, rollback, criação/destruição de agents
+* **Event provenance** — eventos com `event_id`, `event_type`, `timestamp`, `source`, `correlation_id`, `causation_id`, `payload/schema version`
+* **Runtime logs** — erros, warnings, operações, debugging
+* **Memory provenance** — origem, confiança, associações de memórias
+* **State transition audit** — quem executou o quê, quando, através de qual mecanismo
+
+A auditoria deve responder: **"Quem executou o quê, quando e através de qual mecanismo?"**
+
+Isso é **segurança operacional**, não telemetria experimental.
+
+### 41.2 TELEMETRIA PSICOLÓGICA EXPERIMENTAL (NÃO REQUERIDA)
+
+**REMOVIDO** do projeto:
+
+* séries temporais dedicadas de apego, solidão, dependência, emoções, sensações;
+* dashboards de emoções/estados afetivos;
+* armazenamento contínuo de trajetória afetiva;
+* métricas psicológicas como requisito de sistema;
+* infraestrutura de time-series para estados internos.
+
+A Mia continua possuindo estados internos (emoções, sensações, apego, solidão) necessários para funcionamento, mas esses estados **não geram trilha histórica dedicada**.
+
+A observabilidade desses estados, quando necessária, é coberta pela **auditoria operacional** (ex: transição de estado crítica registrada no audit log) e **provenance de eventos/memória**.
+
+### 41.3 CAMADAS DE DADOS (SEPARAÇÃO OBRIGATÓRIA)
+
+Devem existir distinções claras entre:
+
+* **runtime log** — operação do sistema
+* **audit log** — ações críticas, imutável, append-only
+* **telemetry** — métricas de sistema (CPU, memória, latência, custos, tokens) — **NÃO estados psicológicos**
+* **internal state** — estado atual da Mia (emoções, sensações, crenças, etc.)
+* **diary** — narrativa subjetiva da Mia
+* **model-visible context** — o que o LLM vê
+* **administrator-visible data** — o que operadores veem
+
+Nem tudo que é observado precisa ser armazenado.
+Nem tudo que é armazenado precisa ser recuperado pelo modelo.
+Nem tudo que o sistema sabe precisa estar no contexto do LLM.
 
 ---
 
@@ -2004,3 +2076,41 @@ O onboarding deve distinguir:
 **IMPLEMENTAÇÃO ATUAL** — código que realmente existe.
 
 O documento deve evitar descrever componentes imaginados como implementados.
+
+---
+
+# 57. EVITAR EXCESSO DE INFRAESTRUTURA
+
+CLASSIFICAÇÃO: **REQUIREMENT**
+
+O objetivo não é construir a infraestrutura mais complexa possível.
+
+Priorizar:
+
+* **clareza** — código e arquitetura compreensíveis;
+* **modularidade** — componentes independentes, substituíveis;
+* **extensibilidade** — adicionar sem reescrever;
+* **testabilidade** — cada componente testável isoladamente;
+* **baixo acoplamento** — dependências explícitas, mínimas;
+* **evolução incremental** — entregar valor em passos pequenos.
+
+Não adicionar sistemas apenas porque são teoricamente úteis.
+
+Cada componente novo deve possuir uma **razão arquitetural clara** documentada:
+
+1. Qual problema resolve?
+2. Por que não pode ser resolvido com componentes existentes?
+3. Qual o custo de manutenção?
+4. Qual o impacto no acoplamento?
+5. Como será testado?
+
+Se a resposta para qualquer uma for "não sei" ou "é complexo", **não adicionar**.
+
+Exemplos do que **NÃO** adicionar sem justificativa forte:
+* frameworks de orquestração complexos antes de ter múltiplos agentes reais;
+* bancos de dados de séries temporais antes de ter métricas que os exijam;
+* sistemas de cache distribuído antes de ter latência medida;
+* message brokers antes de ter comunicação assíncrona real;
+* service meshes antes de ter múltiplos serviços em produção.
+
+**Regra prática**: implementar o mínimo que resolve o problema atual. Generalizar apenas quando houver **dois casos reais** que se beneficiam da generalização (regra dos 3, mas aplicada conservadoramente).
