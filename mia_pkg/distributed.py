@@ -74,19 +74,60 @@ class SyncEvent:
 
 @dataclass
 class SyncSnapshot:
-    """Snapshot serializado do estado (tabelas principais)."""
+    """Snapshot serializado do estado (tabelas principais).
+
+    SEGURANÇA: `checksum` (MD5) é somente DETECÇÃO DE DIVERGÊNCIA
+    ACIDENTAL. NÃO autentica a origem — um atacante pode recomputar MD5
+    trivialmente. O transporte remoto real exige o `SnapshotAuthenticator`
+    (assinatura/HMAC com segredo compartilhado) antes de aceitar snapshots
+    de outro nó. NÃO expor sync remoto real sem autenticação.
+    """
     node_id: str
     created_s: float
     tables: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     checksum: str = ""
+    # Assinatura prevista para o protocolo autenticado (vazio = não assinado).
+    signature: str = ""
+    nonce: str = ""
 
     def compute_checksum(self) -> str:
-        """MD5 do conteúdo — detecta divergência."""
+        """MD5 do conteúdo — detecta divergência acidental (não autentica)."""
         canonical = json.dumps(self.tables, sort_keys=True, default=str)
         return hashlib.md5(canonical.encode()).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+class SnapshotAuthenticator:
+    """Contrato do protocolo de autenticação de snapshots (não implementado).
+
+    Arquitetura alvo para sync remoto real (NÃO expor sem isso):
+
+        Node Identity          → identidade por nó (chave/segredo por node_id)
+        Authenticated Transport→ TLS/mTLS entre nós
+        Authorized Peer        → whitelist de node_id autorizados
+        Authenticated Snapshot → signature = HMAC(segredo, canonical) ou
+                                 assinatura assimétrica (Ed25519)
+        Version / Nonce        → anti-replay (nonce + timestamp janela)
+
+    Current status: ⬜ NOT STARTED — o transporte de sync atual é
+    PROTOTYPE LOCAL (testes/memória), nunca rede real.
+    """
+
+    @staticmethod
+    def sign(snapshot: SyncSnapshot, secret: str) -> str:
+        raise NotImplementedError(
+            "SnapshotAuthenticator.sign não implementado — sync remoto real "
+            "permanece BLOQUEADO até autenticação existir."
+        )
+
+    @staticmethod
+    def verify(snapshot: SyncSnapshot, secret: str) -> bool:
+        raise NotImplementedError(
+            "SnapshotAuthenticator.verify não implementado — não aceitar "
+            "snapshots remotos não autenticados."
+        )
 
 
 # ======================================================================
