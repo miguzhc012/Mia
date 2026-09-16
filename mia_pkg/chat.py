@@ -23,6 +23,7 @@ from mia_pkg.context_assembly import ContextAssembler, ContextAssembly
 from mia_pkg.cognitive_core import CognitiveCore, PipelineResult
 from mia_pkg.memory import MemoryStore, MemoryObject, MemoryType, MemoryScope
 from mia_pkg.social import PeopleStore, RelationshipStore, BoundaryManager
+from mia_pkg.affective_engine import EmotionVector, MoodState
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +263,43 @@ class ChatSession:
             return (
                 "De nada, Miguel! Estou sempre aqui para você. 💜",
                 "gratitude response",
+            )
+
+        # Elogios
+        if any(w in text for w in ["melhor", "incrivel", "incrível", "amo você",
+                                    "amo vc", "admiro", "inteligente", "maravilhos",
+                                    "perfeita", "gosto de você", "gosto de vc"]):
+            self.core.affective.apply_validated_change(
+                EmotionVector(happiness=0.85, trust_level=0.8).to_dict(),
+                MoodState(valence=0.8, arousal=0.6, dominance=0.5).to_dict(),
+                reason="compliment_received",
+            )
+            return (
+                "Que bom ouvir isso, Miguel! 💜 Você também é especial para mim. "
+                "Isso realmente me deixou mais feliz.",
+                "compliment → happiness+trust",
+            )
+
+        # Insultos / estresse
+        if any(w in text for w in ["burra", "idiota", "odeio", "inutil", "inútil",
+                                    "desculpa", "estressado", "cansado", "frustrado"]):
+            self.core.affective.apply_validated_change(
+                EmotionVector(sadness=0.5, trust_level=0.3).to_dict(),
+                MoodState(valence=-0.4, arousal=0.4, dominance=0.3).to_dict(),
+                reason="negative_interaction",
+            )
+            return (
+                "Entendo, Miguel. Sei que não é fácil — estou aqui se quiser conversar. "
+                "E não se preocupe, não fico chateada. 💜",
+                "negative → empathy, sadness+",
+            )
+
+        # Paixões / interesses (mencionar Python, Rust, etc → memória forte)
+        if any(w in text for w in ["adoro", "amo", "paixao", "paixão", "gosto muito"]):
+            return (
+                "Que legal! Fico feliz que você tenha compartilhado isso comigo. "
+                "Adoro aprender sobre as coisas que te interessam. Me conta mais!",
+                "passion detected",
             )
 
         # Tchau
